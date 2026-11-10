@@ -3,7 +3,6 @@ Option Explicit On
 Option Infer On
 
 Imports System.Diagnostics
-Imports System.Drawing.Drawing2D
 Imports LenSync.UI.Controls
 
 Namespace UI.Dialogs
@@ -50,18 +49,8 @@ Namespace UI.Dialogs
 
         Private Shared Function ShowCore(kind As DialogKind, title As String, message As String,
                                          primaryText As String, secondaryText As String) As Boolean
-            Dim owner = ResolveOwner()
-            Dim overlay As DimOverlay = Nothing
-            If owner IsNot Nothing Then
-                overlay = New DimOverlay(owner)
-                overlay.FadeIn()
-            End If
-            Using dlg As New LsDialogWindow(kind, title, message, primaryText, secondaryText, owner, overlay)
-                If owner IsNot Nothing Then
-                    dlg.ShowDialog(owner)
-                Else
-                    dlg.ShowDialog()
-                End If
+            Using dlg As New LsDialogWindow(kind, title, message, primaryText, secondaryText)
+                dlg.ShowCard()
                 Return dlg.Choice
             End Using
         End Function
@@ -86,22 +75,18 @@ Namespace UI.Dialogs
     End Class
 
     ''' <summary>
-    ''' The dialog card: white, viewfinder brackets that "focus" in, a lens ring that sweeps closed around the glyph,
-    ''' a spaced caption (SUCCESS / ERROR / ...), title, message and buttons. Opens with fade + slide-up,
-    ''' closes with fade + lift. Enter = focused button, Esc = No/close.
+    ''' The message card: lens ring that sweeps closed around a drawn-in glyph, a faint focus ring that pulls in,
+    ''' a spaced caption (SUCCESS / ERROR / ...), title, message and buttons. Enter = focused button, Esc = No/close.
     ''' </summary>
     Friend NotInheritable Class LsDialogWindow
-        Inherits Form
+        Inherits CardWindow
 
         Private Const BaseWidth As Integer = 400
         Private Const GlyphMs As Integer = 200
-        Private Const SlideDistance As Integer = 16
 
         Private ReadOnly _kind As DialogKind
         Private ReadOnly _title As String
         Private ReadOnly _message As String
-        Private ReadOnly _ownerForm As Form
-        Private _overlay As DimOverlay
         Private ReadOnly _primary As LsButton
         Private ReadOnly _secondary As LsButton
 
@@ -111,42 +96,21 @@ Namespace UI.Dialogs
         Private _titleRect As Rectangle
         Private _messageRect As Rectangle
 
-        Private _openT As Double
         Private _glyphT As Double
         Private _countdown As Double = 1
-        Private ReadOnly _openTween As New Tween()
         Private ReadOnly _glyphTween As New Tween()
-        Private ReadOnly _shakeTween As New Tween()
-        Private ReadOnly _closeTween As New Tween()
         Private ReadOnly _countdownTimer As New Timer() With {.Interval = Theme.FrameMs}
         Private ReadOnly _countdownClock As New Stopwatch()
         Private _countdownElapsedMs As Double
 
-        Private _rest As Point
-        Private _closing As Boolean
-        Private _closeAllowed As Boolean
-
         Public Property Choice As Boolean
 
-        Public Sub New(kind As DialogKind, title As String, message As String, primaryText As String,
-                       secondaryText As String, ownerForm As Form, overlay As DimOverlay)
+        Public Sub New(kind As DialogKind, title As String, message As String, primaryText As String, secondaryText As String)
             _kind = kind
             _title = If(title, "")
             _message = If(message, "")
-            _ownerForm = ownerForm
-            _overlay = overlay
-
-            AutoScaleMode = AutoScaleMode.None
-            FormBorderStyle = FormBorderStyle.None
-            ShowInTaskbar = False
-            StartPosition = FormStartPosition.Manual
-            KeyPreview = True
-            BackColor = Theme.White
-            Font = Theme.Body
-            Opacity = 0
-            DoubleBuffered = True
             Text = _title
-            SetStyle(ControlStyles.ResizeRedraw Or ControlStyles.OptimizedDoubleBuffer Or ControlStyles.AllPaintingInWmPaint, True)
+            StrongFrame = kind = DialogKind.Error OrElse kind = DialogKind.Warning
 
             _primary = New LsButton(primaryText, ButtonVariant.Primary)
             AddHandler _primary.Click, Sub() Finish(True)
@@ -163,15 +127,6 @@ Namespace UI.Dialogs
             BuildLayout()
         End Sub
 
-        Protected Overrides ReadOnly Property CreateParams As CreateParams
-            Get
-                Dim cp = MyBase.CreateParams
-                cp.ClassStyle = cp.ClassStyle Or Native.CS_DROPSHADOW
-                Return cp
-            End Get
-        End Property
-
-        ' ---------------------------------------------------------------- layout
         Private Sub BuildLayout()
             Dim w = Theme.Dpi(BaseWidth)
             Dim pad = Theme.Dpi(36)
@@ -219,45 +174,12 @@ Namespace UI.Dialogs
             ClientSize = New Size(w, y)
         End Sub
 
-        Private Function ComputeRestLocation() As Point
-            Dim area As Rectangle
-            If _ownerForm IsNot Nothing Then
-                area = Native.VisibleBounds(_ownerForm)
-            Else
-                area = Screen.FromPoint(Cursor.Position).WorkingArea
-            End If
-            Dim x = area.Left + (area.Width - Width) \ 2
-            Dim y = area.Top + (area.Height - Height) \ 2
-            ' Keep the whole card on the screen even if the owner is partly off-screen.
-            Dim wa = Screen.FromRectangle(area).WorkingArea
-            x = Math.Max(wa.Left, Math.Min(x, wa.Right - Width))
-            y = Math.Max(wa.Top, Math.Min(y, wa.Bottom - Height))
-            Return New Point(x, y)
-        End Function
-
-        ' ---------------------------------------------------------------- open
-        Protected Overrides Sub OnLoad(e As EventArgs)
-            MyBase.OnLoad(e)
-            _rest = ComputeRestLocation()
-            Location = New Point(_rest.X, _rest.Y + Theme.Dpi(SlideDistance))
-            Native.RoundCorners(Me, Theme.Dpi(Theme.Radius))
-        End Sub
-
         Protected Overrides Sub OnShown(e As EventArgs)
-            MyBase.OnShown(e)
             If _secondary IsNot Nothing Then _secondary.Focus() Else _primary.Focus()
-            _openTween.Start(Theme.OpenMs,
-                Sub(t)
-                    Dim k = Easing.OutCubic(t)
-                    Opacity = k
-                    Top = _rest.Y + CInt(Theme.Dpi(SlideDistance) * (1 - k))
-                    _openT = t
-                    Invalidate()
-                End Sub,
-                AddressOf OnOpened)
+            MyBase.OnShown(e)
         End Sub
 
-        Private Sub OnOpened()
+        Protected Overrides Sub OnOpened()
             _glyphTween.Start(GlyphMs,
                 Sub(t)
                     _glyphT = Easing.OutCubic(t)
@@ -272,13 +194,6 @@ Namespace UI.Dialogs
             End Select
         End Sub
 
-        Private Sub Shake()
-            Dim amplitude = Theme.Dpi(10)
-            _shakeTween.Start(Theme.ShakeMs,
-                Sub(t) Left = _rest.X + CInt(amplitude * Easing.Shake(t)),
-                Sub() Left = _rest.X)
-        End Sub
-
         Private Sub OnCountdownTick(sender As Object, e As EventArgs)
             Dim delta = _countdownClock.Elapsed.TotalMilliseconds
             _countdownClock.Restart()
@@ -289,71 +204,21 @@ Namespace UI.Dialogs
             If _countdown <= 0 Then Finish(True)
         End Sub
 
-        ' ---------------------------------------------------------------- close
-        Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
-            If keyData = Keys.Escape Then
-                Finish(False)
-                Return True
-            End If
-            Return MyBase.ProcessCmdKey(msg, keyData)
-        End Function
+        Protected Overrides Sub OnEscapePressed()
+            Finish(False)
+        End Sub
 
         Private Sub Finish(choice As Boolean)
-            If _closing Then Return
-            _closing = True
+            If IsClosing Then Return
             Me.Choice = choice
             _countdownTimer.Stop()
-            _shakeTween.Stop()
-            _openTween.Stop()
-            _overlay?.FadeOut()
-            _overlay = Nothing
-
-            Dim startOpacity = Opacity
-            Dim startTop = Top
-            Left = _rest.X
-            _closeTween.Start(Theme.CloseMs,
-                Sub(t)
-                    Dim k = Easing.OutCubic(t)
-                    Opacity = startOpacity * (1 - k)
-                    Top = startTop - CInt(Theme.Dpi(8) * k)
-                End Sub,
-                Sub()
-                    _closeAllowed = True
-                    DialogResult = DialogResult.OK
-                End Sub)
+            CloseCard(DialogResult.OK)
         End Sub
 
-        Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
-            ' Alt+F4 and similar go through the same animated path; system shutdown closes immediately.
-            If Not _closeAllowed AndAlso e.CloseReason = CloseReason.UserClosing Then
-                e.Cancel = True
-                Finish(False)
-                Return
-            End If
-            If _overlay IsNot Nothing Then
-                _overlay.FadeOut()
-                _overlay = Nothing
-            End If
-            MyBase.OnFormClosing(e)
-        End Sub
-
-        ' ---------------------------------------------------------------- paint
-        Protected Overrides Sub OnPaint(e As PaintEventArgs)
-            Dim g = e.Graphics
-            g.Clear(Theme.White)
-            Gfx.HighQuality(g)
+        Protected Overrides Sub PaintCard(g As Graphics)
             Dim w = ClientSize.Width
             Dim h = ClientSize.Height
-            Dim open = Easing.OutCubic(_openT)
-            Dim strong = _kind = DialogKind.Error OrElse _kind = DialogKind.Warning
-
-            ' Viewfinder brackets: heavier ink for errors/warnings (weight, not color, carries the urgency).
-            Dim inset = Theme.Dpi(14.0F)
-            Using pen As New Pen(If(strong, Theme.Ink, Theme.Silver), Theme.Dpi(If(strong, 2.0F, 1.5F)))
-                pen.StartCap = LineCap.Square
-                pen.EndCap = LineCap.Square
-                Gfx.DrawViewfinder(g, New RectangleF(inset, inset, w - inset * 2 - 1, h - inset * 2 - 1), Theme.Dpi(18.0F), pen, open)
-            End Using
+            Dim open = Easing.OutCubic(OpenProgress)
 
             ' Focus ring: a faint outer ring that pulls in to the lens as the dialog opens.
             Dim focusD = _iconDiameter + Theme.Dpi(14.0F) + CSng(Theme.Dpi(26.0F) * (1 - open))
@@ -373,7 +238,7 @@ Namespace UI.Dialogs
                 End Using
             End If
 
-            DrawTracked(g, CaptionFor(_kind), Theme.Caption, Theme.Slate, w / 2.0F, _captionTop, Theme.Dpi(2.2F))
+            Gfx.DrawTracked(g, CaptionFor(_kind), Theme.Caption, Theme.Slate, w / 2.0F, _captionTop, Theme.Dpi(2.2F), StringAlignment.Center)
 
             Const centered As TextFormatFlags = TextFormatFlags.HorizontalCenter Or TextFormatFlags.WordBreak Or
                                                 TextFormatFlags.NoPrefix Or TextFormatFlags.TextBoxControl
@@ -395,24 +260,6 @@ Namespace UI.Dialogs
                     g.FillRectangle(b, (w - remainW) \ 2, y, remainW, thick)
                 End Using
             End If
-        End Sub
-
-        ''' <summary>Draws letter-spaced text centered on <paramref name="centerX"/>.</summary>
-        Private Shared Sub DrawTracked(g As Graphics, text As String, font As Font, color As Color,
-                                       centerX As Single, top As Integer, tracking As Single)
-            Const flags As TextFormatFlags = TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine
-            Dim widths(text.Length - 1) As Integer
-            Dim total As Single = 0
-            For i = 0 To text.Length - 1
-                widths(i) = TextRenderer.MeasureText(g, text(i).ToString(), font, New Size(Integer.MaxValue, Integer.MaxValue), flags).Width
-                total += widths(i)
-            Next
-            total += tracking * (text.Length - 1)
-            Dim x = centerX - total / 2
-            For i = 0 To text.Length - 1
-                TextRenderer.DrawText(g, text(i).ToString(), font, New Point(CInt(x), top), color, flags)
-                x += widths(i) + tracking
-            Next
         End Sub
 
         Private Shared Function IconFor(kind As DialogKind) As IconKind
@@ -437,10 +284,7 @@ Namespace UI.Dialogs
 
         Protected Overrides Sub Dispose(disposing As Boolean)
             If disposing Then
-                _openTween.Dispose()
                 _glyphTween.Dispose()
-                _shakeTween.Dispose()
-                _closeTween.Dispose()
                 _countdownTimer.Dispose()
             End If
             MyBase.Dispose(disposing)

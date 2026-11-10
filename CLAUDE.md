@@ -35,6 +35,17 @@ Quality, security and ease of use matter as much as features.
 - UI API in place: `LsDialog`, `Toast`, `Validator` (`UI\Dialogs`), `LsButton` (`UI\Controls`, `Kind` = Primary/Secondary/Ghost),
   `Gfx` (rounded rects, viewfinder brackets, lens icons), `Tween`/`Easing` (`UI\Motion.vb`). Errors: `AppLog.Write(ex, context)`,
   user text from `Db.FriendlyMessage(ex)`. Validator: leave ~22px (96-dpi) under each field for the message line.
+- Popups with fields: subclass `UI\Dialogs\LsFormDialog` (put controls in `Body`, implement `OnSubmitAsync`, show with
+  `ShowCard(owner)`); all popups derive from `CardWindow`. Inputs: `LsTextBox` (set `FieldName` = label text for
+  accessibility), `InlineNotice` for form-level messages, `PasswordChecklist` for new passwords.
+- Run DB work off the UI thread with `Await Task.Run(...)` inside Async handlers; the forms run under ShowDialog /
+  Application.Run, so continuations return to the UI thread.
+- Gotcha: when an `Application.Run` loop ends, WinForms drops the thread's ThreadException handler and its
+  WindowsFormsSynchronizationContext — `Program.PrepareUiThread()` re-attaches both before every screen. Keep it.
+- Gotcha: VB runs a subclass's field initializers AFTER the base constructor, so a base class must not call
+  overridable layout/paint code from its constructor (SettingsPage.OnLayout waits for IsHandleCreated).
+- Module views with unsaved edits implement `Modules.IGuardedView` (MainForm asks before switching/logging out).
+- Session ends in Program after the shell is disposed; UI code that may outlive it uses `Session.CurrentUserId` (0 = none).
 
 ---
 
@@ -58,8 +69,8 @@ C:\Projects\LenSync\
       Dialogs\          -- LsDialog.vb, Toast.vb, Validator.vb
       Controls\         -- reusable themed controls (LsButton, LsTextBox, StatTile, SidebarButton...)
     Forms\              -- LoginForm, ForgotPasswordForm, MainForm (shell)
-    Modules\            -- UserControls loaded inside MainForm: DashboardView, BookingsView,
-                           AddServiceView, ReportsView, SettingsView, VerifyReportView
+    Modules\            -- UserControls loaded inside MainForm: DashboardView,
+                           AddServiceView (incl. bookings), ReportsView, SettingsView, VerifyReportView
     Printing\           -- InvoicePrinter.vb, ReportPrinter.vb
 ```
 
@@ -70,9 +81,10 @@ the content panel (with a short fade/slide). No separate windows for modules; di
 
 ## Business decisions (agreed defaults)
 
-1. **Bookings:** LENSYNC has its own small Bookings module (customer name, contact no., email, package,
-   schedule date/time, downpayment, notes, status). Status: `Pending` → `Unpaid` (shoot done, awaiting
-   billing) → `Paid` / `Cancelled`. Add Service lists bookings with status `Unpaid`.
+1. **Bookings (inside Add Service — no separate Bookings nav):** the Add Service module handles bookings
+   (customer name, contact no., email, package, schedule date/time, downpayment, notes, status) as well as
+   billing. Status: `Pending` → `Unpaid` (shoot done, awaiting billing) → `Paid` / `Cancelled`.
+   Billing works on bookings with status `Unpaid`.
    Keep the `bookings` table generic so an external booking system could write to it later.
 2. **Standalone system, integration-ready:** own users/roles; access is controlled per **module permission**.
 3. **One studio per installation.** Business name, address, contact, logo, owner signature live in `settings`.
@@ -90,9 +102,10 @@ the content panel (with a short fade/slide). No separate windows for modules; di
    (the system is not BIR-registered).
 8. **Roles** (permissions editable by Admin via checkboxes):
    - `Admin` — all modules
-   - `Cashier` — Dashboard, Bookings, Add Service
+   - `Cashier` — Dashboard, Add Service
    - `Accounting` — Dashboard, Reports
-   Modules (permission keys): `DASHBOARD`, `BOOKINGS`, `ADD_SERVICE`, `REPORTS`, `SETTINGS`, `VOID_SALE`.
+   Modules (permission keys): `DASHBOARD`, `ADD_SERVICE` (bookings + billing), `REPORTS`, `SETTINGS`, `VOID_SALE`.
+   (`BOOKINGS` was removed on 2026-11-10 when bookings moved into Add Service.)
 9. **Forgot password:** username + registered email → 6-digit code emailed → verify → set new password.
    If offline, Admin resets the password in Settings.
 
@@ -192,9 +205,15 @@ CHECK constraints on statuses/methods/amounts. Status/method columns are `VARCHA
 
 - [x] **Phase 1 – Foundation:** solution/project, App.config, Db, Theme, LsDialog/Toast/Validator, `schema.sql`, `seed.sql`
   (temporary `Forms\DemoForm.vb` test bench is the startup form until Phase 2 replaces it with LoginForm — delete it then)
-- [ ] **Phase 2 – Login & security:** LoginForm, BCrypt, lockout, Session, permissions, MainForm shell + sidebar, audit log, ForgotPasswordForm (SMTP)
-- [ ] **Phase 3 – Settings:** user accounts (create/edit/deactivate/reset password, role), role permissions, packages, add-ons, business info, logo, signature, SMTP config
-- [ ] **Phase 4 – Bookings & Add Service:** bookings CRUD, unpaid list, billing computation, discount, payment method, save (DB transaction), invoice preview/print, void sale (admin)
+- [x] **Phase 2 – Login & security:** LoginForm, BCrypt, lockout, Session, permissions, MainForm shell + sidebar, audit log, ForgotPasswordForm (SMTP)
+  (Core\Auth.vb holds all sign-in/lockout/reset rules; Forms: LoginForm, MainForm, ChangePasswordDialog, ForgotPasswordDialog;
+  modules show Modules\PlaceholderView until their phase — swap them in MainForm.CreateView. SMTP password is stored with
+  AppSettings.SetSecret (DPAPI, LocalMachine) — Phase 3's email settings must use SetSecret, not SetValue.)
+- [x] **Phase 3 – Settings:** user accounts (create/edit/deactivate/reset password, role), role permissions, packages, add-ons, business info, logo, signature, SMTP config
+  (Modules\SettingsView + Modules\Settings\*Page; rules in Core\UserAdmin, PricingAdmin, StudioAdmin — each calls
+  Session.Demand(SETTINGS), returns AdminResult with per-field errors, writes audit in the same transaction. Logo/signature
+  files live in %ProgramData%\LenSync\branding (path in settings). Temporary passwords are shown once via TempPasswordDialog.)
+- [ ] **Phase 4 – Add Service (bookings + billing in one module):** bookings CRUD, unpaid list, billing computation, discount, payment method, save (DB transaction), invoice preview/print, void sale (admin)
 - [ ] **Phase 5 – Dashboard:** today's services, today's sales, 7-day chart, recent transactions, auto-refresh after sale
 - [ ] **Phase 6 – Reports:** report type selector (daily sales, transactions, by payment method, by staff, by package), date range, preview/print with proof footer (generated by, printer, date/time, report no., verification code, owner signature), VerifyReportView
 - [ ] **Phase 7 – Testing & handover:** test cases mapped to ISO 25010, fixes, installer, user manual

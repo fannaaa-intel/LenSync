@@ -41,7 +41,7 @@ CREATE TABLE roles (
 
 CREATE TABLE permissions (
     id           INT AUTO_INCREMENT PRIMARY KEY,
-    perm_key     VARCHAR(40)  NOT NULL,              -- DASHBOARD, BOOKINGS, ADD_SERVICE, REPORTS, SETTINGS, VOID_SALE
+    perm_key     VARCHAR(40)  NOT NULL,              -- DASHBOARD, ADD_SERVICE, REPORTS, SETTINGS, VOID_SALE
     label        VARCHAR(100) NOT NULL,
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_permissions_key (perm_key)

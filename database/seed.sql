@@ -20,16 +20,15 @@ INSERT INTO roles (id, name, description) VALUES
 
 INSERT INTO permissions (id, perm_key, label) VALUES
     (1, 'DASHBOARD',   'Dashboard'),
-    (2, 'BOOKINGS',    'Bookings'),
-    (3, 'ADD_SERVICE', 'Add Service (billing and payment)'),
+    (3, 'ADD_SERVICE', 'Add Service (bookings, billing and payment)'),
     (4, 'REPORTS',     'Reports'),
     (5, 'SETTINGS',    'Settings (users, roles, pricing, business info)'),
     (6, 'VOID_SALE',   'Void a completed sale');
 
 -- Admin: everything
 INSERT INTO role_permissions (role_id, permission_id) SELECT 1, id FROM permissions;
--- Cashier: Dashboard, Bookings, Add Service
-INSERT INTO role_permissions (role_id, permission_id) VALUES (2, 1), (2, 2), (2, 3);
+-- Cashier: Dashboard, Add Service (bookings live inside Add Service)
+INSERT INTO role_permissions (role_id, permission_id) VALUES (2, 1), (2, 3);
 -- Accounting: Dashboard, Reports
 INSERT INTO role_permissions (role_id, permission_id) VALUES (3, 1), (3, 4);
 

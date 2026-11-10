@@ -98,6 +98,28 @@ Namespace Core
             Return DirectCast(Convert.ChangeType(value, target, Globalization.CultureInfo.InvariantCulture), T)
         End Function
 
+        ' ---------------------------------------------------------------- DataRow readers (DBNull-safe)
+        Public Shared Function Str(row As DataRow, column As String) As String
+            Dim v = row(column)
+            Return If(TypeOf v Is DBNull, Nothing, Convert.ToString(v, Globalization.CultureInfo.InvariantCulture))
+        End Function
+
+        Public Shared Function Int(row As DataRow, column As String) As Integer
+            Dim v = row(column)
+            Return If(TypeOf v Is DBNull, 0, Convert.ToInt32(v, Globalization.CultureInfo.InvariantCulture))
+        End Function
+
+        Public Shared Function Bool(row As DataRow, column As String) As Boolean
+            Dim v = row(column)
+            Return Not (TypeOf v Is DBNull) AndAlso Convert.ToInt64(v, Globalization.CultureInfo.InvariantCulture) <> 0
+        End Function
+
+        Public Shared Function NullableDate(row As DataRow, column As String) As DateTime?
+            Dim v = row(column)
+            If TypeOf v Is DBNull Then Return Nothing
+            Return Convert.ToDateTime(v, Globalization.CultureInfo.InvariantCulture)
+        End Function
+
         ' ---------------------------------------------------------------- transactions
         ''' <summary>
         ''' Runs <paramref name="work"/> in one DB transaction: commits if it returns normally, rolls back on any
@@ -166,6 +188,9 @@ Namespace Core
         Public Shared Function FriendlyMessage(ex As Exception) As String
             Dim mysql = TryCast(ex, MySqlException)
             If mysql Is Nothing AndAlso ex IsNot Nothing Then mysql = TryCast(ex.InnerException, MySqlException)
+            If TypeOf ex Is UnauthorizedAccessException Then
+                Return "Your account doesn't have permission to do that. Ask the Admin if you need access."
+            End If
             If TypeOf ex Is ConfigurationErrorsException Then
                 Return "The database settings are missing. Please reinstall LENSYNC or contact the administrator."
             End If

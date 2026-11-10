@@ -16,6 +16,21 @@ Namespace UI
         Question
     End Enum
 
+    ''' <summary>Line icons for navigation and inputs (drawn, so they stay crisp at any DPI).</summary>
+    Public Enum LineIcon
+        Dashboard
+        Bookings
+        AddService
+        Reports
+        Settings
+        SignOut
+        Key
+        Eye
+        EyeOff
+        User
+        Lock
+    End Enum
+
     ''' <summary>GDI+ drawing helpers shared by the custom-drawn controls.</summary>
     Public NotInheritable Class Gfx
 
@@ -168,6 +183,139 @@ Namespace UI
                     remaining = 0
                 End If
             Next
+        End Sub
+
+        ''' <summary>Letter-spaced single-line text. <paramref name="align"/>: Near = starts at x, Center = centered on x.</summary>
+        Public Shared Sub DrawTracked(g As Graphics, text As String, font As Font, color As Color,
+                                      x As Single, top As Integer, tracking As Single,
+                                      Optional align As StringAlignment = StringAlignment.Near)
+            If String.IsNullOrEmpty(text) Then Return
+            Const flags As TextFormatFlags = TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine
+            Dim widths(text.Length - 1) As Integer
+            Dim total As Single = 0
+            For i = 0 To text.Length - 1
+                widths(i) = TextRenderer.MeasureText(g, text(i).ToString(), font, New Size(Integer.MaxValue, Integer.MaxValue), flags).Width
+                total += widths(i)
+            Next
+            total += tracking * (text.Length - 1)
+            Dim cx = If(align = StringAlignment.Center, x - total / 2, If(align = StringAlignment.Far, x - total, x))
+            For i = 0 To text.Length - 1
+                TextRenderer.DrawText(g, text(i).ToString(), font, New Point(CInt(cx), top), color, flags)
+                cx += widths(i) + tracking
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' Width DrawTracked will use for <paramref name="text"/>. Needs the Graphics: the overload without one
+        ''' ignores NoPadding and reports about double the width of a single character.
+        ''' </summary>
+        Public Shared Function MeasureTracked(g As Graphics, text As String, font As Font, tracking As Single) As Integer
+            If String.IsNullOrEmpty(text) Then Return 0
+            Const flags As TextFormatFlags = TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine
+            Dim total As Single = 0
+            For Each ch In text
+                total += TextRenderer.MeasureText(g, ch.ToString(), font, New Size(Integer.MaxValue, Integer.MaxValue), flags).Width
+            Next
+            Return CInt(total + tracking * (text.Length - 1))
+        End Function
+
+        ''' <summary>LENSYNC mark: a lens (ring + inner ring) inside viewfinder brackets.</summary>
+        Public Shared Sub DrawBrandMark(g As Graphics, r As RectangleF, color As Color, stroke As Single)
+            Using pen As New Pen(color, stroke) With {.StartCap = LineCap.Square, .EndCap = LineCap.Square}
+                DrawViewfinder(g, r, r.Width * 0.28F, pen)
+                Dim c As New PointF(r.X + r.Width / 2, r.Y + r.Height / 2)
+                Dim d1 = r.Width * 0.52F
+                Dim d2 = r.Width * 0.24F
+                g.DrawEllipse(pen, c.X - d1 / 2, c.Y - d1 / 2, d1, d1)
+                g.DrawEllipse(pen, c.X - d2 / 2, c.Y - d2 / 2, d2, d2)
+            End Using
+        End Sub
+
+        ''' <summary>Draws a line icon fitted into the square <paramref name="r"/>.</summary>
+        Public Shared Sub DrawLineIcon(g As Graphics, icon As LineIcon, r As RectangleF, color As Color, stroke As Single)
+            Dim s = r.Width
+            Dim x = r.X
+            Dim y = r.Y
+            Using pen As New Pen(color, stroke) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round, .LineJoin = LineJoin.Round}
+                Select Case icon
+                    Case LineIcon.Dashboard
+                        Dim q = s * 0.42F
+                        Dim gap = s * 0.16F
+                        For Each pt In {New PointF(x, y), New PointF(x + q + gap, y), New PointF(x, y + q + gap), New PointF(x + q + gap, y + q + gap)}
+                            Using p = RoundedRect(New RectangleF(pt.X, pt.Y, q, q), s * 0.08F)
+                                g.DrawPath(pen, p)
+                            End Using
+                        Next
+                    Case LineIcon.Bookings
+                        Using p = RoundedRect(New RectangleF(x, y + s * 0.12F, s, s * 0.86F), s * 0.1F)
+                            g.DrawPath(pen, p)
+                        End Using
+                        g.DrawLine(pen, x, y + s * 0.38F, x + s, y + s * 0.38F)
+                        g.DrawLine(pen, x + s * 0.28F, y, x + s * 0.28F, y + s * 0.22F)
+                        g.DrawLine(pen, x + s * 0.72F, y, x + s * 0.72F, y + s * 0.22F)
+                        Using b As New SolidBrush(color)
+                            Dim d = stroke * 1.1F
+                            For Each px In {0.3F, 0.5F, 0.7F}
+                                g.FillEllipse(b, x + s * px - d / 2, y + s * 0.62F - d / 2, d, d)
+                            Next
+                        End Using
+                    Case LineIcon.AddService
+                        ' Receipt with a torn edge and a plus.
+                        Dim pts = {New PointF(x + s * 0.1F, y), New PointF(x + s * 0.9F, y), New PointF(x + s * 0.9F, y + s),
+                                   New PointF(x + s * 0.74F, y + s * 0.88F), New PointF(x + s * 0.58F, y + s),
+                                   New PointF(x + s * 0.42F, y + s * 0.88F), New PointF(x + s * 0.26F, y + s),
+                                   New PointF(x + s * 0.1F, y + s * 0.88F)}
+                        g.DrawPolygon(pen, pts)
+                        g.DrawLine(pen, x + s * 0.5F, y + s * 0.24F, x + s * 0.5F, y + s * 0.62F)
+                        g.DrawLine(pen, x + s * 0.31F, y + s * 0.43F, x + s * 0.69F, y + s * 0.43F)
+                    Case LineIcon.Reports
+                        g.DrawLine(pen, x, y + s, x + s, y + s)
+                        g.DrawLine(pen, x + s * 0.2F, y + s * 0.82F, x + s * 0.2F, y + s * 0.5F)
+                        g.DrawLine(pen, x + s * 0.5F, y + s * 0.82F, x + s * 0.5F, y + s * 0.12F)
+                        g.DrawLine(pen, x + s * 0.8F, y + s * 0.82F, x + s * 0.8F, y + s * 0.34F)
+                    Case LineIcon.Settings
+                        ' Three sliders.
+                        Dim knob = s * 0.24F
+                        Dim rows = {New Tuple(Of Single, Single)(0.15F, 0.3F), New Tuple(Of Single, Single)(0.5F, 0.7F), New Tuple(Of Single, Single)(0.85F, 0.42F)}
+                        For Each row In rows
+                            Dim ly = y + s * row.Item1
+                            Dim kx = x + s * row.Item2
+                            g.DrawLine(pen, x, ly, kx - knob / 2, ly)
+                            g.DrawLine(pen, kx + knob / 2, ly, x + s, ly)
+                            g.DrawEllipse(pen, kx - knob / 2, ly - knob / 2, knob, knob)
+                        Next
+                    Case LineIcon.SignOut
+                        g.DrawLines(pen, {New PointF(x + s * 0.45F, y), New PointF(x, y), New PointF(x, y + s), New PointF(x + s * 0.45F, y + s)})
+                        g.DrawLine(pen, x + s * 0.32F, y + s * 0.5F, x + s, y + s * 0.5F)
+                        g.DrawLines(pen, {New PointF(x + s * 0.76F, y + s * 0.26F), New PointF(x + s, y + s * 0.5F), New PointF(x + s * 0.76F, y + s * 0.74F)})
+                    Case LineIcon.Key
+                        Dim d = s * 0.44F
+                        g.DrawEllipse(pen, x, y + s * 0.28F, d, d)
+                        g.DrawLine(pen, x + d, y + s * 0.5F, x + s, y + s * 0.5F)
+                        g.DrawLine(pen, x + s * 0.82F, y + s * 0.5F, x + s * 0.82F, y + s * 0.7F)
+                        g.DrawLine(pen, x + s * 0.66F, y + s * 0.5F, x + s * 0.66F, y + s * 0.64F)
+                    Case LineIcon.Eye, LineIcon.EyeOff
+                        Using p As New GraphicsPath()
+                            p.AddBezier(x, y + s * 0.5F, x + s * 0.25F, y + s * 0.12F, x + s * 0.75F, y + s * 0.12F, x + s, y + s * 0.5F)
+                            p.AddBezier(x + s, y + s * 0.5F, x + s * 0.75F, y + s * 0.88F, x + s * 0.25F, y + s * 0.88F, x, y + s * 0.5F)
+                            g.DrawPath(pen, p)
+                        End Using
+                        Dim d = s * 0.28F
+                        g.DrawEllipse(pen, x + s / 2 - d / 2, y + s / 2 - d / 2, d, d)
+                        If icon = LineIcon.EyeOff Then g.DrawLine(pen, x + s * 0.12F, y + s * 0.9F, x + s * 0.88F, y + s * 0.1F)
+                    Case LineIcon.User
+                        Dim d = s * 0.42F
+                        g.DrawEllipse(pen, x + s / 2 - d / 2, y, d, d)
+                        g.DrawArc(pen, x + s * 0.06F, y + s * 0.52F, s * 0.88F, s * 0.9F, 180, 180)
+                    Case LineIcon.Lock
+                        Using p = RoundedRect(New RectangleF(x + s * 0.08F, y + s * 0.44F, s * 0.84F, s * 0.56F), s * 0.1F)
+                            g.DrawPath(pen, p)
+                        End Using
+                        g.DrawArc(pen, x + s * 0.26F, y, s * 0.48F, s * 0.6F, 180, 180)
+                        g.DrawLine(pen, x + s * 0.26F, y + s * 0.3F, x + s * 0.26F, y + s * 0.44F)
+                        g.DrawLine(pen, x + s * 0.74F, y + s * 0.3F, x + s * 0.74F, y + s * 0.44F)
+                End Select
+            End Using
         End Sub
 
         Private Shared Function Distance(a As PointF, b As PointF) As Double

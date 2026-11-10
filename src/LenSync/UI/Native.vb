@@ -26,6 +26,17 @@ Namespace UI
         Private Shared Function DwmSetWindowAttribute(hwnd As IntPtr, attribute As Integer, ByRef value As Integer, size As Integer) As Integer
         End Function
 
+        Private Const EM_SETCUEBANNER As Integer = &H1501
+
+        <DllImport("user32.dll", CharSet:=CharSet.Unicode)>
+        Private Shared Function SendMessage(hWnd As IntPtr, msg As Integer, wParam As IntPtr, lParam As String) As IntPtr
+        End Function
+
+        ''' <summary>Grey placeholder text in an empty TextBox; it stays visible while focused until the user types.</summary>
+        Public Shared Sub SetCueBanner(box As TextBox, text As String)
+            If box.IsHandleCreated Then SendMessage(box.Handle, EM_SETCUEBANNER, New IntPtr(1), If(text, ""))
+        End Sub
+
         Private Const DWMWA_EXTENDED_FRAME_BOUNDS As Integer = 9
 
         <StructLayout(LayoutKind.Sequential)>

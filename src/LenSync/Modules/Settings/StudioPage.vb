@@ -12,7 +12,7 @@ Namespace Modules.Settings
 
     ''' <summary>Settings > Studio: business name, address, contact, logo and owner signature (used on receipts and reports).</summary>
     Public Class StudioPage
-        Inherits SettingsPage
+        Inherits ModulePage
 
         Private ReadOnly _lblName As Label
         Private ReadOnly _lblAddress As Label

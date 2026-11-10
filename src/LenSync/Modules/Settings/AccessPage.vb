@@ -13,7 +13,7 @@ Namespace Modules.Settings
 
     ''' <summary>Settings > Roles &amp; access: which modules each role may open (Admin is always full access).</summary>
     Public Class AccessPage
-        Inherits SettingsPage
+        Inherits ModulePage
 
         Private ReadOnly _matrix As New PermissionMatrix()
         Private ReadOnly _notice As New InlineNotice()

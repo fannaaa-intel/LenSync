@@ -39,6 +39,14 @@ Namespace Core
         Public Const StudioUpdate As String = "STUDIO_UPDATE"
         Public Const EmailSettingsUpdate As String = "EMAIL_SETTINGS_UPDATE"
         Public Const EmailTest As String = "EMAIL_TEST"
+        Public Const BookingCreate As String = "BOOKING_CREATE"
+        Public Const BookingUpdate As String = "BOOKING_UPDATE"
+        Public Const BookingDone As String = "BOOKING_DONE"
+        Public Const BookingCancel As String = "BOOKING_CANCEL"
+        Public Const SaleComplete As String = "SALE_COMPLETE"
+        Public Const Discount As String = "DISCOUNT"
+        Public Const VoidSale As String = "VOID"
+        Public Const ReceiptPrint As String = "RECEIPT_PRINT"
 
     End Class
 

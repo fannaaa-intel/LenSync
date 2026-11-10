@@ -13,7 +13,7 @@ Namespace Modules.Settings
 
     ''' <summary>Settings > Packages and Settings > Add-ons (same page, different columns).</summary>
     Public Class PricingPage
-        Inherits SettingsPage
+        Inherits ModulePage
 
         Private ReadOnly _kind As PriceItemKind
         Private ReadOnly _search As New LsTextBox()

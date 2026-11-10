@@ -29,6 +29,8 @@ Namespace UI
         EyeOff
         User
         Lock
+        Search
+        Clock
     End Enum
 
     ''' <summary>GDI+ drawing helpers shared by the custom-drawn controls.</summary>
@@ -314,7 +316,32 @@ Namespace UI
                         g.DrawArc(pen, x + s * 0.26F, y, s * 0.48F, s * 0.6F, 180, 180)
                         g.DrawLine(pen, x + s * 0.26F, y + s * 0.3F, x + s * 0.26F, y + s * 0.44F)
                         g.DrawLine(pen, x + s * 0.74F, y + s * 0.3F, x + s * 0.74F, y + s * 0.44F)
+                    Case LineIcon.Search
+                        Dim d = s * 0.66F
+                        g.DrawEllipse(pen, x, y, d, d)
+                        g.DrawLine(pen, x + d * 0.86F, y + d * 0.86F, x + s, y + s)
+                    Case LineIcon.Clock
+                        g.DrawEllipse(pen, x, y, s, s)
+                        g.DrawLines(pen, {New PointF(x + s * 0.5F, y + s * 0.22F), New PointF(x + s * 0.5F, y + s * 0.5F), New PointF(x + s * 0.7F, y + s * 0.64F)})
                 End Select
+            End Using
+        End Sub
+
+        ''' <summary>A small V (down) or ^ (up) chevron centered in <paramref name="r"/>.</summary>
+        Public Shared Sub DrawChevron(g As Graphics, r As RectangleF, color As Color, stroke As Single, Optional up As Boolean = False,
+                                      Optional horizontal As Integer = 0)
+            Dim w = Math.Min(r.Width, r.Height) * 0.5F
+            Dim cx = r.X + r.Width / 2
+            Dim cy = r.Y + r.Height / 2
+            Using pen As New Pen(color, stroke) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round, .LineJoin = LineJoin.Round}
+                If horizontal <> 0 Then
+                    ' horizontal: -1 = "<", 1 = ">"
+                    Dim dx = w * 0.28F * horizontal
+                    g.DrawLines(pen, {New PointF(cx - dx, cy - w / 2), New PointF(cx + dx, cy), New PointF(cx - dx, cy + w / 2)})
+                Else
+                    Dim dy = w * 0.28F * If(up, -1, 1)
+                    g.DrawLines(pen, {New PointF(cx - w / 2, cy - dy), New PointF(cx, cy + dy), New PointF(cx + w / 2, cy - dy)})
+                End If
             End Using
         End Sub
 

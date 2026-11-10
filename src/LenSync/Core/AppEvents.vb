@@ -19,6 +19,13 @@ Namespace Core
         ''' <summary>The signed-in user's own name/email/role was edited.</summary>
         Public Shared Event CurrentUserChanged As EventHandler
 
+        ''' <summary>A booking or sale was created or changed (the Dashboard refreshes on this).</summary>
+        Public Shared Event SalesChanged As EventHandler
+
+        Public Shared Sub RaiseSalesChanged()
+            RaiseEvent SalesChanged(Nothing, EventArgs.Empty)
+        End Sub
+
         Public Shared Sub RaiseStudioChanged()
             RaiseEvent StudioChanged(Nothing, EventArgs.Empty)
         End Sub

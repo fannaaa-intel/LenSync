@@ -15,7 +15,7 @@ Namespace Modules.Settings
     ''' never shown again; leaving it blank keeps the saved one.
     ''' </summary>
     Public Class EmailPage
-        Inherits SettingsPage
+        Inherits ModulePage
 
         Private ReadOnly _labels As New Dictionary(Of Control, Label)
         Private ReadOnly _txtUser As New LsTextBox()

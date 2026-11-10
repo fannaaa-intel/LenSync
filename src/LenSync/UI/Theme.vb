@@ -42,6 +42,20 @@ Namespace UI
         Public Shared ReadOnly TitleLarge As New Font(FontFamilySemibold, 20.0F, FontStyle.Regular)
         Public Shared ReadOnly Button As New Font(FontFamilySemibold, 9.75F, FontStyle.Regular)
 
+        ''' <summary>Printed documents (receipts, reports): point sizes for paper, same single typeface.</summary>
+        Public NotInheritable Class Print
+            Private Sub New()
+            End Sub
+            Public Shared ReadOnly Studio As New Font(FontFamilySemibold, 12.0F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly DocTitle As New Font(FontFamilySemibold, 9.5F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly Body As New Font(FontFamilyName, 8.0F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly BodyBold As New Font(FontFamilySemibold, 8.0F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly Small As New Font(FontFamilyName, 6.5F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly SmallBold As New Font(FontFamilySemibold, 6.5F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly Total As New Font(FontFamilySemibold, 11.0F, FontStyle.Regular, GraphicsUnit.Point)
+            Public Shared ReadOnly Stamp As New Font(FontFamilySemibold, 54.0F, FontStyle.Regular, GraphicsUnit.Point)
+        End Class
+
         ' ---------------------------------------------------------------- sizes (96-dpi values; wrap with Dpi())
         Public Const RadiusSmall As Integer = 6
         Public Const Radius As Integer = 8

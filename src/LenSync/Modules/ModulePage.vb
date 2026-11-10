@@ -8,14 +8,14 @@ Imports LenSync.UI
 Imports LenSync.UI.Controls
 Imports LenSync.UI.Dialogs
 
-Namespace Modules.Settings
+Namespace Modules
 
     ''' <summary>
-    ''' Base for a Settings tab: title + description at the top left, action buttons at the top right (Actions),
-    ''' and the page's own controls below (subclasses place them in LayoutContent). Pages sit on SettingsView's
-    ''' white card, so their background is white.
+    ''' Base for a tab inside a TabbedView (Settings, Add Service): title + description at the top left, action buttons
+    ''' at the top right (Actions), and the page's own controls below (subclasses place them in LayoutContent).
+    ''' Pages sit on the view's white card, so their background is white.
     ''' </summary>
-    Public MustInherit Class SettingsPage
+    Public MustInherit Class ModulePage
         Inherits UserControl
 
         Private ReadOnly _title As String
@@ -37,14 +37,23 @@ Namespace Modules.Settings
             Controls.Add(Actions)
         End Sub
 
-        ''' <summary>Called the first time the page is shown, and after saves that need a refresh.</summary>
+        ''' <summary>
+        ''' Called every time the page is shown. Loads on the first visit; later visits reload only when
+        ''' RefreshOnShow is True (pages whose data other tabs change, e.g. bookings that move to Billing).
+        ''' </summary>
         Public Async Function EnsureLoadedAsync() As Task
-            If _loaded Then Return
+            If _loaded AndAlso Not RefreshOnShow Then Return
             _loaded = True
             Await ReloadAsync()
         End Function
 
         Public MustOverride Function ReloadAsync() As Task
+
+        Protected Overridable ReadOnly Property RefreshOnShow As Boolean
+            Get
+                Return False
+            End Get
+        End Property
 
         ''' <summary>Pages with a Save button return True while edits are not saved.</summary>
         Public Overridable ReadOnly Property HasUnsavedChanges As Boolean
@@ -75,7 +84,7 @@ Namespace Modules.Settings
             ' created its controls. Wait until the page has a window; by then every constructor has finished.
             If Not IsHandleCreated Then Return
             Dim actionsH = Theme.Dpi(Theme.ButtonHeight)
-            Dim actionsW = Math.Min(Width \ 2 + Theme.Dpi(80), Actions.Controls.Cast(Of Control)().Sum(Function(c) c.Width + c.Margin.Horizontal))
+            Dim actionsW = Math.Min(Width \ 2 + Theme.Dpi(80), Actions.Controls.Cast(Of Control)().Where(Function(c) c.Visible).Sum(Function(c) c.Width + c.Margin.Horizontal))
             Actions.Bounds = New Rectangle(Width - actionsW, 0, actionsW, actionsH)
             LayoutContent(New Rectangle(0, ContentTop, Width, Math.Max(0, Height - ContentTop)))
         End Sub
@@ -120,6 +129,38 @@ Namespace Modules.Settings
                                          .TextAlign = ContentAlignment.BottomLeft, .AutoEllipsis = True, .BackColor = Theme.White}
             Controls.Add(lbl)
             Return lbl
+        End Function
+
+        ''' <summary>
+        ''' Lays out a toolbar row: <paramref name="left"/> controls flow from the left edge (the first one, usually a
+        ''' search box, takes the spare width between its min and max), <paramref name="right"/> buttons align right
+        ''' (first = right-most). Hidden controls are skipped. Returns the bottom of the row.
+        ''' </summary>
+        Protected Function LayoutToolbar(area As Rectangle, left As Control(), right As Control(),
+                                         Optional searchMin96 As Integer = 160, Optional searchMax96 As Integer = 320) As Integer
+            Dim gap = Theme.Dpi(10)
+            Dim rowH = Theme.Dpi(40)
+            Dim y = area.Top
+            Dim r = area.Right
+            For Each b In right
+                If Not b.Visible Then Continue For
+                b.Location = New Point(r - b.Width, y + (rowH - b.Height) \ 2)
+                r = b.Left - gap
+            Next
+            Dim fixedW = left.Skip(1).Where(Function(c) c.Visible).Sum(Function(c) c.Width + Theme.Dpi(16))
+            Dim x = area.Left
+            For i = 0 To left.Length - 1
+                Dim c = left(i)
+                If Not c.Visible Then Continue For
+                If i = 0 Then
+                    Dim w = Math.Max(Theme.Dpi(searchMin96), Math.Min(Theme.Dpi(searchMax96), r - x - fixedW - Theme.Dpi(16)))
+                    c.Bounds = New Rectangle(x, y, w, rowH)
+                Else
+                    c.Location = New Point(x, y + (rowH - c.Height) \ 2)
+                End If
+                x = c.Right + Theme.Dpi(16)
+            Next
+            Return y + rowH
         End Function
 
     End Class

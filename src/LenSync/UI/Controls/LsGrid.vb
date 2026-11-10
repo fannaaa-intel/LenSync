@@ -15,6 +15,12 @@ Namespace UI.Controls
         Private ReadOnly _statusColumns As New HashSet(Of String)
         Private _emptyText As String = "Nothing here yet."
 
+        ''' <summary>
+        ''' Status texts drawn as a solid ink pill (the state that matters most on that list, e.g. "Active" or
+        ''' "Unpaid"); every other status is an outline. Weight, not color, carries the meaning.
+        ''' </summary>
+        Public ReadOnly Property SolidStatuses As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {"Active"}
+
         Public Sub New()
             DoubleBuffered = True
             BorderStyle = BorderStyle.None
@@ -154,8 +160,7 @@ Namespace UI.Controls
                 Dim size = TextRenderer.MeasureText(text, Theme.LabelBold)
                 Dim h = Theme.Dpi(24)
                 Dim r As New Rectangle(e.CellBounds.X + Theme.Dpi(12), e.CellBounds.Y + (e.CellBounds.Height - h) \ 2, size.Width + Theme.Dpi(14), h)
-                ' "Active" is the solid pill; every other state is an outline (weight, not color, carries the meaning).
-                Dim solid = String.Equals(text, "Active", StringComparison.OrdinalIgnoreCase)
+                Dim solid = SolidStatuses.Contains(text)
                 Using path = Gfx.RoundedRect(r, h / 2.0F)
                     If solid Then
                         Using b As New SolidBrush(Theme.Ink)

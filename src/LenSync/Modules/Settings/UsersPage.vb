@@ -14,7 +14,7 @@ Namespace Modules.Settings
 
     ''' <summary>Settings > Users: list, search, create, edit, reset password, deactivate/reactivate.</summary>
     Public Class UsersPage
-        Inherits SettingsPage
+        Inherits ModulePage
 
         Private ReadOnly _search As New LsTextBox()
         Private ReadOnly _grid As New LsGrid()

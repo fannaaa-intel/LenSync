@@ -191,6 +191,7 @@ Public Class MainForm
     Private Shared Function CreateView(info As ModuleInfo) As Control
         Select Case info.Key
             Case Permissions.Settings : Return New SettingsView()
+            Case Permissions.AddService : Return New AddServiceView()
             Case Else : Return New PlaceholderView($"Arrives in Phase {info.Phase}", info.Title, info.Description)
         End Select
     End Function

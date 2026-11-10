@@ -14,6 +14,12 @@ Namespace Modules
         Function CanLeave() As Boolean
     End Interface
 
+    ''' <summary>The shell that hosts module views (MainForm). Views use it to jump to another module.</summary>
+    Public Interface IModuleHost
+        ''' <summary>Opens the module with permission key <paramref name="key"/> at tab <paramref name="tab"/> (if it has tabs).</summary>
+        Sub OpenModule(key As String, Optional tab As Integer = 0)
+    End Interface
+
     ''' <summary>
     ''' A module made of tabs (Settings, Add Service). Each tab is a ModulePage on a white card; pages are created on
     ''' first visit and slide in. Leaving a page with unsaved edits asks first.
@@ -44,9 +50,12 @@ Namespace Modules
 
         Protected MustOverride Function CreatePage(index As Integer) As ModulePage
 
+        ''' <summary>The tab shown first (set before the view is displayed).</summary>
+        Public Property InitialTab As Integer
+
         Protected Overrides Sub OnLoad(e As EventArgs)
             MyBase.OnLoad(e)
-            _tabs.SelectedIndex = 0
+            _tabs.SelectedIndex = Math.Max(0, Math.Min(_pages.Length - 1, InitialTab))
         End Sub
 
         ''' <summary>Switches to a tab from code (same checks as clicking it).</summary>

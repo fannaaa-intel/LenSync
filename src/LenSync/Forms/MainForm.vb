@@ -15,6 +15,7 @@ Imports LenSync.UI.Dialogs
 ''' </summary>
 Public Class MainForm
     Inherits Form
+    Implements IModuleHost
 
     Private NotInheritable Class ModuleInfo
         Public Key As String
@@ -169,7 +170,12 @@ Public Class MainForm
     End Function
 
     ' ---------------------------------------------------------------- modules
-    Private Sub ShowModule(key As String)
+    ''' <summary>Used by views (e.g. a Dashboard tile) to open another module, optionally at a given tab.</summary>
+    Public Sub OpenModule(key As String, Optional tab As Integer = 0) Implements IModuleHost.OpenModule
+        ShowModule(key, tab)
+    End Sub
+
+    Private Sub ShowModule(key As String, Optional tab As Integer = 0)
         Dim info = AllModules.FirstOrDefault(Function(m) m.Key = key)
         If info Is Nothing Then Return
         ' Re-check here, not only when building the sidebar.
@@ -178,13 +184,19 @@ Public Class MainForm
             LsDialog.Warning($"Your account doesn't have access to {info.Title}. Ask the Admin if you need it.", "No access")
             Return
         End If
-        If key = _currentKey Then Return
+        If key = _currentKey Then
+            If tab > 0 Then TryCast(_current, TabbedView)?.SelectTab(tab)
+            Return
+        End If
         If Not CurrentViewCanLeave() Then Return
         _currentKey = key
         For Each b In _nav
             b.IsActive = b.Key = key
         Next
-        ShowView(CreateView(info), info.Title, info.Subtitle)
+        Dim view = CreateView(info)
+        Dim tabbed = TryCast(view, TabbedView)
+        If tabbed IsNot Nothing Then tabbed.InitialTab = tab
+        ShowView(view, info.Title, info.Subtitle)
     End Sub
 
     ''' <summary>Builds the view for a module. Later phases replace the placeholders here.</summary>
@@ -192,6 +204,7 @@ Public Class MainForm
         Select Case info.Key
             Case Permissions.Settings : Return New SettingsView()
             Case Permissions.AddService : Return New AddServiceView()
+            Case Permissions.Dashboard : Return New DashboardView()
             Case Else : Return New PlaceholderView($"Arrives in Phase {info.Phase}", info.Title, info.Description)
         End Select
     End Function

@@ -46,6 +46,13 @@ Namespace Data
                 Rows.Cast(Of DataRow)().Select(AddressOf Map).ToList()
         End Function
 
+        ''' <summary>Bookings scheduled on <paramref name="day"/> (cancelled ones left out), earliest first.</summary>
+        Public Shared Function ListForDay(day As Date) As List(Of Booking)
+            Return Db.Query($"{SelectSql} AND b.status <> 'Cancelled' AND b.schedule_at >= @from AND b.schedule_at < @to ORDER BY b.schedule_at, b.id",
+                            Db.P("@from", day.Date), Db.P("@to", day.Date.AddDays(1))).
+                Rows.Cast(Of DataRow)().Select(AddressOf Map).ToList()
+        End Function
+
         Public Shared Function GetById(id As Integer) As Booking
             Dim t = Db.Query($"{SelectSql} AND b.id = @id", Db.P("@id", id))
             Return If(t.Rows.Count = 0, Nothing, Map(t.Rows(0)))

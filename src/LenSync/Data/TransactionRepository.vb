@@ -48,14 +48,15 @@ Namespace Data
         End Sub
 
         ''' <summary>Sales newest first. <paramref name="fromDate"/> Nothing = all dates.</summary>
-        Public Shared Function List(fromDate As DateTime?) As List(Of SaleSummary)
+        Public Shared Function List(fromDate As DateTime?, Optional limit As Integer = 1000) As List(Of SaleSummary)
             Dim sql =
                 "SELECT t.id, t.receipt_no, t.created_at, b.customer_name, b.booking_no, t.payment_method, t.total, t.balance_due, " &
                 "u.full_name AS cashier, t.status FROM transactions t " &
                 "JOIN bookings b ON b.id = t.booking_id JOIN users u ON u.id = t.cashier_id" &
                 If(fromDate.HasValue, " WHERE t.created_at >= @from", "") &
-                " ORDER BY t.created_at DESC, t.id DESC LIMIT 1000"
-            Dim rows = If(fromDate.HasValue, Db.Query(sql, Db.P("@from", fromDate.Value)), Db.Query(sql))
+                " ORDER BY t.created_at DESC, t.id DESC LIMIT @limit"
+            Dim limitParam = Db.P("@limit", Math.Max(1, Math.Min(1000, limit)))
+            Dim rows = If(fromDate.HasValue, Db.Query(sql, Db.P("@from", fromDate.Value), limitParam), Db.Query(sql, limitParam))
             Return rows.Rows.Cast(Of DataRow)().Select(
                 Function(r) New SaleSummary With {
                     .Id = Db.Int(r, "id"), .ReceiptNo = Db.Str(r, "receipt_no"), .CreatedAt = Convert.ToDateTime(r("created_at")),

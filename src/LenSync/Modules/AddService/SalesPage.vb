@@ -39,9 +39,10 @@ Namespace Modules.AddService
             _btnVoid.Visible = Session.HasPermission(Permissions.VoidSale)
             _grid.SolidStatuses.Clear()
             _grid.SolidStatuses.Add("Completed")
-            _grid.AddTextColumn("receipt", "Receipt no.", 15)
+            ' Receipt no. must show "AR-2026-000123" in full at a 1080p/150% content width.
+            _grid.AddTextColumn("receipt", "Receipt no.", 17)
             _grid.AddTextColumn("date", "Date", 15)
-            _grid.AddTextColumn("customer", "Customer", 19)
+            _grid.AddTextColumn("customer", "Customer", 16)
             _grid.AddTextColumn("method", "Paid via", 9)
             _grid.AddTextColumn("paid", "Amount paid", 13, alignRight:=True)
             _grid.AddTextColumn("cashier", "Cashier", 18)

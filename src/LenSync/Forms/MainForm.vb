@@ -205,6 +205,7 @@ Public Class MainForm
             Case Permissions.Settings : Return New SettingsView()
             Case Permissions.AddService : Return New AddServiceView()
             Case Permissions.Dashboard : Return New DashboardView()
+            Case Permissions.Reports : Return New ReportsView()
             Case Else : Return New PlaceholderView($"Arrives in Phase {info.Phase}", info.Title, info.Description)
         End Select
     End Function

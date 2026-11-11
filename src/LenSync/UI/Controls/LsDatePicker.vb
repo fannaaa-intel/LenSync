@@ -14,8 +14,11 @@ Namespace UI.Controls
         Inherits FieldShell
 
         Private Shared ReadOnly PH As CultureInfo = CultureInfo.GetCultureInfo("en-PH")
+        Public Const DefaultFormat As String = "ddd, MMM d, yyyy"
         Private _value As Date = Date.Today
         Private _minDate As Date = Date.MinValue
+        Private _format As String = DefaultFormat
+        Private _showIcon As Boolean = True
 
         Public Event ValueChanged As EventHandler
 
@@ -24,7 +27,7 @@ Namespace UI.Controls
         End Sub
 
         Public Shared Function Format(d As Date) As String
-            Return d.ToString("ddd, MMM d, yyyy", PH)
+            Return d.ToString(DefaultFormat, PH)
         End Function
 
         Public Property Value As Date
@@ -35,9 +38,32 @@ Namespace UI.Controls
                 v = v.Date
                 If v = _value Then Return
                 _value = v
-                Text = Format(v)
+                Text = v.ToString(_format, PH)
                 Invalidate()
                 RaiseEvent ValueChanged(Me, EventArgs.Empty)
+            End Set
+        End Property
+
+        ''' <summary>How the date is shown in the field (en-PH), e.g. "MMM d, yyyy" for narrow side-by-side fields.</summary>
+        Public Property DateFormat As String
+            Get
+                Return _format
+            End Get
+            Set(v As String)
+                _format = If(String.IsNullOrEmpty(v), DefaultFormat, v)
+                Text = _value.ToString(_format, PH)
+                Invalidate()
+            End Set
+        End Property
+
+        ''' <summary>The calendar icon at the left; turn off to save width in narrow fields.</summary>
+        Public Property ShowIcon As Boolean
+            Get
+                Return _showIcon
+            End Get
+            Set(v As Boolean)
+                _showIcon = v
+                Invalidate()
             End Set
         End Property
 
@@ -66,10 +92,13 @@ Namespace UI.Controls
         End Function
 
         Protected Overrides Sub PaintContent(g As Graphics, area As Rectangle)
-            Dim s = Theme.Dpi(16.0F)
-            Gfx.DrawLineIcon(g, LineIcon.Bookings, New RectangleF(area.Left + Theme.Dpi(1), (Height - s) / 2, s, s),
-                             If(Enabled, Theme.Slate, Theme.Mist), Theme.Dpi(1.5F))
-            Dim x = area.Left + Theme.Dpi(26)
+            Dim x = area.Left
+            If _showIcon Then
+                Dim s = Theme.Dpi(16.0F)
+                Gfx.DrawLineIcon(g, LineIcon.Bookings, New RectangleF(area.Left + Theme.Dpi(1), (Height - s) / 2, s, s),
+                                 If(Enabled, Theme.Slate, Theme.Mist), Theme.Dpi(1.5F))
+                x += Theme.Dpi(26)
+            End If
             TextRenderer.DrawText(g, Text, Theme.Body, New Rectangle(x, 0, Math.Max(0, area.Right - x), Height), If(Enabled, Theme.Ink, Theme.Silver),
                                   TextFormatFlags.VerticalCenter Or TextFormatFlags.SingleLine Or TextFormatFlags.EndEllipsis Or
                                   TextFormatFlags.NoPrefix Or TextFormatFlags.NoPadding)

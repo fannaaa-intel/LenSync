@@ -47,6 +47,8 @@ Namespace Core
         Public Const Discount As String = "DISCOUNT"
         Public Const VoidSale As String = "VOID"
         Public Const ReceiptPrint As String = "RECEIPT_PRINT"
+        Public Const ReportPrint As String = "REPORT_PRINT"
+        Public Const ReportVerify As String = "REPORT_VERIFY"
 
     End Class
 

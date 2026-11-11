@@ -33,11 +33,12 @@ Namespace Modules.Settings
             _search.FieldName = "Search users"
             _search.Icon = LineIcon.User
             _grid.EmptyText = "No users match your search."
-            _grid.AddTextColumn("name", "Name", 22)
-            _grid.AddTextColumn("username", "Username", 14)
+            ' Name is widest: it must fit "System Administrator  (you)" at a 1080p/150% content width.
+            _grid.AddTextColumn("name", "Name", 25)
+            _grid.AddTextColumn("username", "Username", 13)
             _grid.AddTextColumn("role", "Role", 12)
-            _grid.AddTextColumn("email", "Email", 22)
-            _grid.AddTextColumn("lastLogin", "Last log-in", 16)
+            _grid.AddTextColumn("email", "Email", 21)
+            _grid.AddTextColumn("lastLogin", "Last log-in", 15)
             _grid.AddStatusColumn("status", "Status", 15)
             Controls.AddRange({_search, _btnEdit, _btnReset, _btnActive, _grid})
 

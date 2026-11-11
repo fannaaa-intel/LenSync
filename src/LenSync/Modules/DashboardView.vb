@@ -70,9 +70,10 @@ Namespace Modules
             _schedule.RowTemplate.Height = Theme.Dpi(38)
             _schedule.SolidStatuses.Clear()
             _schedule.SolidStatuses.Add(BookingStatus.Unpaid)
-            _schedule.AddTextColumn("time", "Time", 32)
-            _schedule.AddTextColumn("customer", "Customer", 40)
-            _schedule.AddStatusColumn("status", "Status", 28)
+            ' Time and the status pill need little room; give the customer's name the rest.
+            _schedule.AddTextColumn("time", "Time", 26)
+            _schedule.AddTextColumn("customer", "Customer", 48)
+            _schedule.AddStatusColumn("status", "Status", 26)
             _schedule.EmptyText = "No shoots scheduled today."
             _schedule.AccessibleName = "Today's schedule"
 

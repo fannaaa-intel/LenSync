@@ -10,6 +10,7 @@ Imports LenSync.Core
 Imports LenSync.Models
 Imports LenSync.UI
 Imports LenSync.UI.Dialogs
+Imports LenSync.Printing.PrintKit
 
 Namespace Printing
 
@@ -30,11 +31,7 @@ Namespace Printing
         ' ================================================================ preview
         ''' <summary>The receipt as a picture <paramref name="widthPx"/> wide (height follows the paper's shape).</summary>
         Public Shared Function RenderPreview(r As Receipt, widthPx As Integer) As Bitmap
-            widthPx = Math.Max(100, widthPx)
-            Dim heightPx = CInt(Math.Round(widthPx * PageHeightPt / PageWidthPt))
-            Dim bmp As New Bitmap(widthPx, heightPx)
-            Dim dpi = widthPx / 5.5F
-            bmp.SetResolution(dpi, dpi)
+            Dim bmp = NewPageBitmap(widthPx, PageWidthPt, PageHeightPt)
             Using g = Graphics.FromImage(bmp)
                 g.Clear(Theme.White)
                 g.PageUnit = GraphicsUnit.Point
@@ -66,11 +63,8 @@ Namespace Printing
                 doc.PrintController = New StandardPrintController()   ' no system "Printing page 1" box
                 AddHandler doc.PrintPage,
                     Sub(sender, e)
-                        Dim g = e.Graphics
-                        g.PageUnit = GraphicsUnit.Point
-                        ' The printer's origin is its hard margin; move it back to the paper's corner.
-                        g.TranslateTransform(-e.PageSettings.HardMarginX * 0.72F, -e.PageSettings.HardMarginY * 0.72F)
-                        Render(g, r)
+                        PreparePrinterGraphics(e)
+                        Render(e.Graphics, r)
                         e.HasMorePages = False
                     End Sub
                 doc.Print()
@@ -105,7 +99,7 @@ Namespace Printing
 
             ' Studio header.
             Dim y = 26.0F
-            Dim logo = LoadLogo(r.LogoPath)
+            Dim logo = LoadImage(r.LogoPath)
             If logo IsNot Nothing Then
                 Using logo
                     Dim scale = Math.Min(110.0F / logo.Width, 40.0F / logo.Height)
@@ -220,26 +214,7 @@ Namespace Printing
             Line(g, "This document is not valid as a BIR invoice.", Theme.Print.SmallBold, Theme.Ink, left, inner, fy + 10, StringAlignment.Center)
         End Sub
 
-        Private Shared Function LoadLogo(path As String) As Image
-            If String.IsNullOrEmpty(path) OrElse Not IO.File.Exists(path) Then Return Nothing
-            Try
-                Return StudioAdmin.LoadImageCopy(path)
-            Catch ex As Exception
-                AppLog.Write(ex, "Loading logo for receipt")
-                Return Nothing
-            End Try
-        End Function
-
-        ' ---------------------------------------------------------------- primitives
-        Private Shared Sub Text(g As Graphics, s As String, font As Font, color As Color, rect As RectangleF,
-                                Optional align As StringAlignment = StringAlignment.Near)
-            Using b As New SolidBrush(color)
-                Using sf As New StringFormat(StringFormatFlags.NoWrap) With {.Alignment = align, .Trimming = StringTrimming.EllipsisCharacter}
-                    g.DrawString(If(s, ""), font, b, rect, sf)
-                End Using
-            End Using
-        End Sub
-
+        ' ---------------------------------------------------------------- receipt-specific helpers (shared ones: PrintKit)
         ''' <summary>One line of text across the content width; returns the y below it.</summary>
         Private Shared Function Line(g As Graphics, s As String, font As Font, color As Color, left As Single, width As Single,
                                      y As Single, align As StringAlignment) As Single
@@ -260,28 +235,6 @@ Namespace Printing
             Text(g, value, font, Theme.Ink, New RectangleF(x, y, width, h), StringAlignment.Far)
             Return y + h
         End Function
-
-        Private Shared Sub Rule(g As Graphics, x1 As Single, x2 As Single, y As Single, color As Color, thickness As Single)
-            Using p As New Pen(color, thickness)
-                g.DrawLine(p, x1, y, x2, y)
-            End Using
-        End Sub
-
-        ''' <summary>Letter-spaced text centered on <paramref name="centerX"/> (GDI+ so it scales with the page).</summary>
-        Private Shared Sub Tracked(g As Graphics, s As String, font As Font, color As Color, centerX As Single, y As Single, tracking As Single)
-            Using sf As StringFormat = CType(StringFormat.GenericTypographic.Clone(), StringFormat)
-                ' Typographic measuring gives a space no width, so give it a word gap.
-                Dim widths = s.Select(Function(c) If(c = " "c, font.SizeInPoints * 0.6F, g.MeasureString(c.ToString(), font, PointF.Empty, sf).Width)).ToArray()
-                Dim total = widths.Sum() + tracking * (s.Length - 1)
-                Dim x = centerX - total / 2
-                Using b As New SolidBrush(color)
-                    For i = 0 To s.Length - 1
-                        g.DrawString(s(i).ToString(), font, b, x, y, sf)
-                        x += widths(i) + tracking
-                    Next
-                End Using
-            End Using
-        End Sub
 
     End Class
 

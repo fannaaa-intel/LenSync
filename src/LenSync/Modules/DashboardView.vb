@@ -4,7 +4,6 @@ Option Infer On
 
 Imports System.Globalization
 Imports System.Threading.Tasks
-Imports System.Windows.Forms.DataVisualization.Charting
 Imports LenSync.Core
 Imports LenSync.Models
 Imports LenSync.UI
@@ -27,7 +26,7 @@ Namespace Modules
         Private ReadOnly _tileReceipts As New StatTile() With {.Text = "Receipts today"}
         Private ReadOnly _tileShoots As New StatTile() With {.Text = "Shoots today"}
         Private ReadOnly _tileToBill As New StatTile() With {.Text = "To bill"}
-        Private ReadOnly _chart As Chart = ChartStyle.CreateColumnChart()
+        Private ReadOnly _chart As New WeekChart()
         Private ReadOnly _recent As New LsGrid()
         Private ReadOnly _schedule As New LsGrid()
         Private ReadOnly _timer As New Timer() With {.Interval = 60000}
@@ -78,6 +77,7 @@ Namespace Modules
             _schedule.AccessibleName = "Today's schedule"
 
             _chart.AccessibleName = "Sales for the last 7 days"
+            _chart.Clickable = _canOpen
             Controls.AddRange({_chart, _recent, _schedule})
 
             AddHandler _recent.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then ViewSelectedReceipt()
@@ -88,6 +88,7 @@ Namespace Modules
                                             End If
                                         End Sub
             AddHandler _schedule.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenAddService(0)
+            AddHandler _chart.DayClicked, Sub() OpenAddService(2)
             AddHandler _timer.Tick, Sub() RefreshNow()
             AddHandler AppEvents.SalesChanged, AddressOf OnSalesChanged
         End Sub
@@ -147,14 +148,7 @@ Namespace Modules
             _tileToBill.SetValue(snap.ToBill)
             _tileToBill.Note = If(snap.ToBill = 0, "Every finished shoot is paid", "Finished shoots awaiting payment")
 
-            _chart.Series(ChartStyle.SeriesName).Points.Clear()
-            For Each d In snap.Week
-                Dim isToday = d.Day = snap.LoadedAt.Date
-                Dim label = If(isToday, "Today", d.Day.ToString("ddd d", PH))
-                Dim tip = $"{d.Day.ToString("ddd, MMM d", PH)}: {Money.Format(d.Total)} from {d.Receipts} receipt{If(d.Receipts = 1, "", "s")}"
-                ChartStyle.AddColumn(_chart, label, d.Total, tip, highlight:=isToday)
-            Next
-            ChartStyle.FinishAxis(_chart)
+            _chart.SetDays(snap.Week, snap.LoadedAt.Date)
 
             _recent.Rows.Clear()
             For Each s In snap.Recent

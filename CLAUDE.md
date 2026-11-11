@@ -264,6 +264,12 @@ CHECK constraints on statuses/methods/amounts. Status/method columns are `VARCHA
   reports, every tab and dialog rendered at 1032x594. Fixes from it: column widths at 1080p/150% (Sales receipt no. /
   cashier, Users name "(you)", Dashboard schedule name). The harness lives outside the repo (scratchpad) and writes
   results.csv with IDs per ISO area; open decisions: add it to the repo as tests\, installer tool, document format.
+  E-signature (2026-11-11, user request): Settings > Studio > "Draw..." opens Forms\SignaturePadDialog
+  (UI\Controls\SignaturePad: mouse/touch/pen strokes, Undo/Clear/Ctrl+Z, ToImage = transparent PNG cropped to the ink).
+  The drawing goes to a temp "signature-drawn-*.png" and is saved by StudioAdmin.SaveStudio like an upload (audit
+  "e-signature drawn on screen"); ReportPrinter already prints it above "Owner's signature".
+  Cashier = POS (confirmed with the user): bookings (new/edit/cancel with reason) + billing + payment + receipt, all under
+  ADD_SERVICE; only void needs VOID_SALE. Open idea: rule for cancelling a booking that has a downpayment.
 
 ## Default seed login (development only)
 

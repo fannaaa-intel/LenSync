@@ -93,7 +93,11 @@ Namespace Core
             If before.Address <> address Then changes.Add("address changed")
             If before.Contact <> contact Then changes.Add("contact changed")
             If logoSource IsNot Nothing Then changes.Add(If(logoSource.Length = 0, "logo removed", "logo replaced"))
-            If signatureSource IsNot Nothing Then changes.Add(If(signatureSource.Length = 0, "signature removed", "signature replaced"))
+            If signatureSource IsNot Nothing Then
+                ' Settings > Studio > Draw writes "signature-drawn-*.png" (see StudioPage.DrawSignature).
+                Dim drawn = signatureSource.Length > 0 AndAlso Path.GetFileName(signatureSource).StartsWith("signature-drawn-", StringComparison.OrdinalIgnoreCase)
+                changes.Add(If(signatureSource.Length = 0, "signature removed", If(drawn, "e-signature drawn on screen", "signature replaced")))
+            End If
             If changes.Count > 0 Then AuditLog.Write(AuditActions.StudioUpdate, "settings", Nothing, String.Join("; ", changes))
             Return AdminResult.Success()
         End Function

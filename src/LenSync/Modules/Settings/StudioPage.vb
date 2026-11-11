@@ -27,7 +27,6 @@ Namespace Modules.Settings
         Private ReadOnly _btnLogo As New LsButton("Choose...", ButtonVariant.Secondary)
         Private ReadOnly _btnLogoRemove As New LsButton("Remove", ButtonVariant.Ghost)
         Private ReadOnly _btnSigDraw As New LsButton("Draw...", ButtonVariant.Secondary)
-        Private ReadOnly _btnSig As New LsButton("Upload...", ButtonVariant.Secondary)
         Private ReadOnly _btnSigRemove As New LsButton("Remove", ButtonVariant.Ghost)
         Private _drawnFile As String           ' temp PNG of a signature drawn on screen, until it is saved or dropped
         Private ReadOnly _hint As New Label()
@@ -57,22 +56,21 @@ Namespace Modules.Settings
             _txtContact.Filter = InputFilter.Phone
             _txtContact.MaxLength = 40
             _txtContact.Placeholder = "e.g. 0917 123 4567"
-            _hint.Text = "Draw the signature on screen, or upload a PNG or JPG up to 5 MB (white or transparent background prints best). " &
-                         "It appears on printed reports."
+            _hint.Text = "Logo: PNG or JPG up to 5 MB. Signature: click Draw and sign with the mouse, touchpad or a pen; " &
+                         "it appears on printed reports."
             _hint.Font = Theme.Hint
             _hint.ForeColor = Theme.Slate
             _hint.BackColor = Theme.White
-            For Each b In {_btnLogo, _btnLogoRemove, _btnSigDraw, _btnSig, _btnSigRemove}
+            For Each b In {_btnLogo, _btnLogoRemove, _btnSigDraw, _btnSigRemove}
                 b.FitToText(96)
             Next
             Controls.AddRange({_txtName, _txtAddress, _txtContact, _logo, _signature, _btnLogo, _btnLogoRemove,
-                               _btnSigDraw, _btnSig, _btnSigRemove, _hint})
+                               _btnSigDraw, _btnSigRemove, _hint})
 
             For Each t In {_txtName, _txtAddress, _txtContact}
                 AddHandler t.TextChanged, Sub() UpdateButtons()
             Next
-            AddHandler _btnLogo.Click, Sub() ChooseImage(isLogo:=True)
-            AddHandler _btnSig.Click, Sub() ChooseImage(isLogo:=False)
+            AddHandler _btnLogo.Click, Sub() ChooseLogo()
             AddHandler _btnSigDraw.Click, Sub() DrawSignature()
             AddHandler _btnLogoRemove.Click, Sub() RemoveImage(isLogo:=True)
             AddHandler _btnSigRemove.Click, Sub() RemoveImage(isLogo:=False)
@@ -133,9 +131,9 @@ Namespace Modules.Settings
             _btnSigRemove.Enabled = _signature.Picture IsNot Nothing
         End Sub
 
-        Private Sub ChooseImage(isLogo As Boolean)
+        Private Sub ChooseLogo()
             Using dlg As New OpenFileDialog() With {
-                .Title = If(isLogo, "Choose the studio logo", "Choose the owner's signature"),
+                .Title = "Choose the studio logo",
                 .Filter = "Pictures (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
                 .CheckFileExists = True, .Multiselect = False}
                 If dlg.ShowDialog(FindForm()) <> DialogResult.OK Then Return
@@ -144,25 +142,19 @@ Namespace Modules.Settings
                     preview = StudioAdmin.LoadImageCopy(dlg.FileName)
                 Catch ex As Exception
                     AppLog.Write(ex, "Opening picture")
-                    Validator.SetError(If(isLogo, _logo, _signature), "That file isn't a picture LENSYNC can read.")
+                    Validator.SetError(_logo, "That file isn't a picture LENSYNC can read.")
                     Return
                 End Try
-                Validator.Clear(If(isLogo, _logo, _signature))
-                If isLogo Then
-                    _logoSource = dlg.FileName
-                    _logo.Picture = preview
-                Else
-                    DropDrawnFile()
-                    _signatureSource = dlg.FileName
-                    _signature.Picture = preview
-                End If
+                Validator.Clear(_logo)
+                _logoSource = dlg.FileName
+                _logo.Picture = preview
             End Using
             UpdateButtons()
         End Sub
 
         ''' <summary>
-        ''' E-signature: the owner signs on screen. The drawing is written to a temp PNG and then handled exactly like
-        ''' an uploaded picture (validated, resized and copied into the branding folder on Save).
+        ''' E-signature (the only way to set the owner's signature): the owner signs on screen. The drawing is written
+        ''' to a temp PNG and saved like any studio picture (validated, resized and copied into the branding folder).
         ''' </summary>
         Private Sub DrawSignature()
             Dim drawn As Bitmap = Nothing
@@ -258,24 +250,18 @@ Namespace Modules.Settings
             Dim slotW = (rightW - Theme.Dpi(20)) \ 2
             Dim slotH = Theme.Dpi(132)
             Dim top = area.Top
-            Dim gap = Theme.Dpi(4)
-            ' Logo: Choose / Remove share the slot's width so they never run into the next picture.
-            _lblLogo.Bounds = New Rectangle(x, top, slotW, labelH)
-            _logo.Bounds = New Rectangle(x, top + labelH + Theme.Dpi(4), slotW, slotH)
-            Dim chooseW = CInt(slotW * 0.56)
-            _btnLogo.Bounds = New Rectangle(x, _logo.Bottom + Theme.Dpi(26), chooseW, _btnLogo.Height)
-            _btnLogoRemove.Bounds = New Rectangle(_btnLogo.Right + gap, _btnLogo.Top, slotW - chooseW - gap, _btnLogoRemove.Height)
-
-            ' Signature: Draw / Upload side by side, Remove under them (three buttons don't fit one slot width).
-            Dim sx = x + slotW + Theme.Dpi(20)
-            _lblSignature.Bounds = New Rectangle(sx, top, slotW, labelH)
-            _signature.Bounds = New Rectangle(sx, top + labelH + Theme.Dpi(4), slotW, slotH)
-            Dim halfW = (slotW - gap) \ 2
-            _btnSigDraw.Bounds = New Rectangle(sx, _signature.Bottom + Theme.Dpi(26), halfW, _btnSigDraw.Height)
-            _btnSig.Bounds = New Rectangle(_btnSigDraw.Right + gap, _btnSigDraw.Top, slotW - halfW - gap, _btnSig.Height)
-            _btnSigRemove.Bounds = New Rectangle(sx, _btnSigDraw.Bottom + Theme.Dpi(6), halfW, _btnSigRemove.Height)
-
-            _hint.Bounds = New Rectangle(x, _btnSigRemove.Bottom + Theme.Dpi(12), rightW, Theme.Hint.Height * 3 + Theme.Dpi(4))
+            Dim col = 0
+            For Each set1 In {Tuple.Create(_lblLogo, _logo, _btnLogo, _btnLogoRemove), Tuple.Create(_lblSignature, _signature, _btnSigDraw, _btnSigRemove)}
+                Dim sx = x + col * (slotW + Theme.Dpi(20))
+                set1.Item1.Bounds = New Rectangle(sx, top, slotW, labelH)
+                set1.Item2.Bounds = New Rectangle(sx, top + labelH + Theme.Dpi(4), slotW, slotH)
+                ' Choose(Draw) / Remove share the slot's width so they never run into the next picture.
+                Dim chooseW = CInt(slotW * 0.56)
+                set1.Item3.Bounds = New Rectangle(sx, set1.Item2.Bottom + Theme.Dpi(26), chooseW, set1.Item3.Height)
+                set1.Item4.Bounds = New Rectangle(set1.Item3.Right + Theme.Dpi(4), set1.Item3.Top, slotW - chooseW - Theme.Dpi(4), set1.Item4.Height)
+                col += 1
+            Next
+            _hint.Bounds = New Rectangle(x, _btnLogo.Bottom + Theme.Dpi(12), rightW, Theme.Hint.Height * 2 + Theme.Dpi(4))
         End Sub
 
     End Class

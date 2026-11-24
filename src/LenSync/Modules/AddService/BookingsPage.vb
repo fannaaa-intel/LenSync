@@ -44,14 +44,14 @@ Namespace Modules.AddService
             _grid.EmptyText = "No bookings to show."
             _grid.SolidStatuses.Clear()
             _grid.SolidStatuses.Add(BookingStatus.Unpaid)
-            _grid.AddTextColumn("no", "Booking no.", 14)
-            _grid.AddTextColumn("customer", "Customer", 21)
-            _grid.AddTextColumn("package", "Package", 18)
-            _grid.AddTextColumn("schedule", "Schedule", 19)
-            _grid.AddTextColumn("dp", "Downpayment", 14, alignRight:=True)
+            _grid.AddTextColumn("no", "Booking no.", 16)
+            _grid.AddTextColumn("customer", "Customer", 20)
+            _grid.AddTextColumn("package", "Package", 17)
+            _grid.AddTextColumn("schedule", "Schedule", 20)
+            _grid.AddTextColumn("dp", "Downpaid", 14, alignRight:=True)
             ' Cancelled / voided lists show why (the reason is required when closing a booking).
-            _grid.AddTextColumn("reason", "Reason", 30)
-            _grid.AddStatusColumn("status", "Status", 12)
+            _grid.AddTextColumn("reason", "Reason", 24)
+            _grid.AddStatusColumn("status", "Status", 13)
             Controls.AddRange({_search, _filter, _btnEdit, _btnNext, _btnCancel, _grid})
 
             AddHandler _search.TextChanged, Sub() Fill()

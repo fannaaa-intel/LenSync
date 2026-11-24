@@ -30,12 +30,13 @@ Namespace Modules.AddService
             _search.Placeholder = "Search name or booking no."
             _search.FieldName = "Search unpaid bookings"
             _search.Icon = LineIcon.Search
-            _grid.AddTextColumn("no", "Booking no.", 14)
-            _grid.AddTextColumn("customer", "Customer", 21)
-            _grid.AddTextColumn("package", "Package", 18)
-            _grid.AddTextColumn("shoot", "Shoot", 23)
-            _grid.AddTextColumn("price", "Package price", 13, alignRight:=True)
-            _grid.AddTextColumn("dp", "Downpayment", 13, alignRight:=True)
+            ' Weights keep "BK-2026-0001" and "₱35,000.00" whole in a small window (Package drops out first).
+            _grid.AddTextColumn("no", "Booking no.", 16)
+            _grid.AddTextColumn("customer", "Customer", 20)
+            _grid.AddTextColumn("package", "Package", 17)
+            _grid.AddTextColumn("shoot", "Shoot", 21)
+            _grid.AddTextColumn("price", "Price", 15, alignRight:=True)
+            _grid.AddTextColumn("dp", "Downpaid", 15, alignRight:=True)
             _btnVoid.Visible = Session.HasPermission(Permissions.VoidSale)
             Controls.AddRange({_search, _btnBill, _btnVoid, _grid})
 

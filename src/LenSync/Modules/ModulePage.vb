@@ -134,7 +134,9 @@ Namespace Modules
         ''' <summary>
         ''' Lays out a toolbar row: <paramref name="left"/> controls flow from the left edge (the first one, usually a
         ''' search box, takes the spare width between its min and max), <paramref name="right"/> buttons align right
-        ''' (first = right-most). Hidden controls are skipped. Returns the bottom of the row.
+        ''' (first = right-most). Hidden controls are skipped. When everything doesn't fit on one row (small windows),
+        ''' the left controls after the first (filters) move to a second row so nothing overlaps the buttons.
+        ''' Returns the bottom of the last row.
         ''' </summary>
         Protected Function LayoutToolbar(area As Rectangle, left As Control(), right As Control(),
                                          Optional searchMin96 As Integer = 160, Optional searchMax96 As Integer = 320) As Integer
@@ -147,17 +149,22 @@ Namespace Modules
                 b.Location = New Point(r - b.Width, y + (rowH - b.Height) \ 2)
                 r = b.Left - gap
             Next
-            Dim fixedW = left.Skip(1).Where(Function(c) c.Visible).Sum(Function(c) c.Width + Theme.Dpi(16))
+            Dim rest = left.Skip(1).Where(Function(c) c.Visible).ToList()
+            Dim fixedW = rest.Sum(Function(c) c.Width + Theme.Dpi(16))
+            Dim wrap = rest.Count > 0 AndAlso area.Left + Theme.Dpi(searchMin96) + Theme.Dpi(16) + fixedW > r
             Dim x = area.Left
-            For i = 0 To left.Length - 1
-                Dim c = left(i)
-                If Not c.Visible Then Continue For
-                If i = 0 Then
-                    Dim w = Math.Max(Theme.Dpi(searchMin96), Math.Min(Theme.Dpi(searchMax96), r - x - fixedW - Theme.Dpi(16)))
-                    c.Bounds = New Rectangle(x, y, w, rowH)
-                Else
-                    c.Location = New Point(x, y + (rowH - c.Height) \ 2)
-                End If
+            If left.Length > 0 AndAlso left(0).Visible Then
+                Dim spare = r - x - If(wrap, 0, fixedW) - Theme.Dpi(16)
+                Dim w = Math.Max(Theme.Dpi(searchMin96), Math.Min(Theme.Dpi(searchMax96), spare))
+                left(0).Bounds = New Rectangle(x, y, w, rowH)
+                x = left(0).Right + Theme.Dpi(16)
+            End If
+            If wrap Then
+                y += rowH + Theme.Dpi(12)
+                x = area.Left
+            End If
+            For Each c In rest
+                c.Location = New Point(x, y + (rowH - c.Height) \ 2)
                 x = c.Right + Theme.Dpi(16)
             Next
             Return y + rowH

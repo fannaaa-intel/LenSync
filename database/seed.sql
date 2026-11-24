@@ -82,8 +82,9 @@ INSERT INTO bookings (booking_no, customer_name, contact_no, customer_email, pac
         DATE_FORMAT(DATE_ADD(NOW(), INTERVAL 30 DAY), '%Y-%m-%d 08:00:00'), 10000.00, 'Cash', NULL,            'Pending',   'Church: St. Peter and Paul Parish', 1),
     (CONCAT('BK-', @y, '-0008'), 'Paolo Aquino',      '09891234567', NULL,                        1,
         DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 5 DAY), '%Y-%m-%d 14:00:00'),    0.00, NULL,    NULL,            'Cancelled', NULL, 1);
+-- The one sample cancellation (matched by status: comparing booking_no with CONCAT(@y...) mixes collations).
 UPDATE bookings SET closed_reason = 'Customer rescheduled to next month', closed_by = 1, closed_at = DATE_SUB(NOW(), INTERVAL 6 DAY)
-    WHERE booking_no = CONCAT('BK-', @y, '-0008');
+    WHERE status = 'Cancelled';
 
 -- Continue numbering after the sample bookings.
 INSERT INTO doc_sequences (doc_type, seq_year, last_no) VALUES ('BK', @y, 8);

@@ -66,8 +66,8 @@ Namespace Modules.Settings
             _txtTax.Filter = InputFilter.Money
             _txtTax.MaxLength = 6
             _txtTax.Placeholder = "0 = no tax"
-            _hint.Text = "Tax rate: added on top of every bill after discounts (e.g. 6 = 6%). Logo: PNG or JPG up to 5 MB. " &
-                         "Signature: click Draw and sign with the mouse, touchpad or a pen; it appears on printed reports."
+            _hint.Text = "Tax rate: added to every bill after discounts (6 = 6%). Logo: PNG or JPG up to 5 MB. " &
+                         "Signature: click Draw and sign; it prints on reports."
             _hint.Font = Theme.Hint
             _hint.ForeColor = Theme.Slate
             _hint.BackColor = Theme.White
@@ -282,7 +282,9 @@ Namespace Modules.Settings
                 set1.Item4.Bounds = New Rectangle(set1.Item3.Right + Theme.Dpi(4), set1.Item3.Top, slotW - chooseW - Theme.Dpi(4), set1.Item4.Height)
                 col += 1
             Next
-            _hint.Bounds = New Rectangle(x, _btnLogo.Bottom + Theme.Dpi(12), rightW, Theme.Hint.Height * 3 + Theme.Dpi(4))
+            ' Up to 4 lines, but never past the bottom of the page.
+            Dim hintTop = _btnLogo.Bottom + Theme.Dpi(12)
+            _hint.Bounds = New Rectangle(x, hintTop, rightW, Math.Max(0, Math.Min(Theme.Hint.Height * 4 + Theme.Dpi(4), area.Bottom - hintTop)))
         End Sub
 
     End Class

@@ -95,12 +95,17 @@ Namespace Modules.AddService
                 If q.Length > 0 AndAlso Not (Display.Has(s.ReceiptNo, q) OrElse Display.Has(s.CustomerName, q) OrElse Display.Has(s.BookingNo, q)) Then Continue For
                 Dim i = _grid.Rows.Add(s.ReceiptNo, Display.Stamp(s.CreatedAt), s.CustomerName, s.PaymentMethod, Money.Format(s.BalanceDue), s.CashierName, s.Status)
                 _grid.Rows(i).Tag = s
+                ' Small windows hide the Status column; old voided receipts then read lighter with "Voided" as the amount.
+                If s.Status <> "Completed" Then
+                    _grid.Rows(i).DefaultCellStyle.ForeColor = Theme.Silver
+                    If Not _grid.Columns("status").Visible Then _grid.Rows(i).Cells("paid").Value = s.Status
+                End If
                 shown += 1
                 If s.Status = "Completed" Then collected += s.BalanceDue
             Next
             If keepId <> 0 Then _grid.SelectWhere(Function(t) DirectCast(t, SaleSummary).Id = keepId)
             _grid.EmptyText = If(q.Length > 0, "No receipts match your search.", "No sales in this period yet.")
-            _lblTotal.Text = If(shown = 0, "", $"{shown} receipt{If(shown = 1, "", "s")}  ·  {Money.Format(collected)} collected (voided sales not counted)")
+            _lblTotal.Text = If(shown = 0, "", $"{shown} receipt{If(shown = 1, "", "s")}  ·  {Money.Format(collected)} collected")
             UpdateButtons()
         End Sub
 
@@ -121,7 +126,13 @@ Namespace Modules.AddService
             Dim footH = Theme.Label.Height + Theme.Dpi(12)
             _grid.Bounds = New Rectangle(area.Left, gridTop, area.Width, Math.Max(0, area.Bottom - gridTop - footH))
             _lblTotal.Bounds = New Rectangle(area.Left, _grid.Bottom + Theme.Dpi(4), area.Width, footH - Theme.Dpi(4))
+            ' Narrow windows: drop Cashier, then Status (receipts are final once paid, so it almost always reads Completed).
             _grid.Columns("cashier").Visible = area.Width >= Theme.Dpi(840)
+            Dim showStatus = area.Width >= Theme.Dpi(760)
+            If _grid.Columns("status").Visible <> showStatus Then
+                _grid.Columns("status").Visible = showStatus
+                If IsHandleCreated Then BeginInvoke(New Action(Sub() Fill()))   ' re-mark old voided rows for the new layout
+            End If
         End Sub
 
         Private Async Sub ViewSelected()

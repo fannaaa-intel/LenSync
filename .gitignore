@@ -25,3 +25,6 @@ project.fragment.lock.json
 *.log
 Thumbs.db
 Desktop.ini
+
+# Regression run output (screenshots, results.csv)
+tests/LenSync.Regression/out/

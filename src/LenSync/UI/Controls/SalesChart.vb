@@ -77,11 +77,14 @@ Namespace UI.Controls
         End Function
 
         ' ---------------------------------------------------------------- labels
-        ''' <summary>Under the bar: "Mon 23" / "Today", "Nov 16" / "This week", "Jun" / "Nov".</summary>
+        ''' <summary>
+        ''' Under the bar: "Mon 23" / "Today", "Nov 16" (week starting), "Jun". The current week/month is marked by bold
+        ''' text and the brackets ("This week" doesn't fit 8 narrow columns); the detail card spells it out.
+        ''' </summary>
         Private Function ShortLabel(i As Integer) As String
             Dim b = _bars(i)
             Select Case _period
-                Case SalesPeriod.Weekly : Return If(IsCurrent(i), "This week", b.First.ToString("MMM d", PH))
+                Case SalesPeriod.Weekly : Return b.First.ToString("MMM d", PH)
                 Case SalesPeriod.Monthly : Return b.First.ToString("MMM", PH)
                 Case Else : Return If(IsCurrent(i), "Today", b.First.ToString("ddd d", PH))
             End Select

@@ -59,8 +59,9 @@ Public Class ReceiptDialog
     Private Shared Function PreviewSize(r As Receipt) As Size
         Dim availH = Screen.FromPoint(Cursor.Position).WorkingArea.Height / Theme.DpiScale
         Dim maxH = Math.Max(300, Math.Min(640, availH - 260))
-        ' Same scale as a full half-letter page would get, so short receipts look short (not blown up).
-        Dim scale = maxH / InvoicePrinter.MaxPageHeightPt
+        ' As large as the screen allows: limited by height for long receipts and by a readable card width
+        ' (480 px) for short ones, so a compact receipt is shown bigger instead of shrunk like a full page.
+        Dim scale = Math.Min(maxH / PageHeight(r), 480.0 / InvoicePrinter.PageWidthPt)
         Dim h = CInt(Math.Ceiling(PageHeight(r) * scale))
         Dim w = CInt(Math.Ceiling(InvoicePrinter.PageWidthPt * scale))
         Return New Size(Math.Max(w, 400), h + 2)

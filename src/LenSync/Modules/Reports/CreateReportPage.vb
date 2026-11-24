@@ -285,14 +285,11 @@ Namespace Modules.Reports
             If _data Is Nothing Then
                 _summary.Text = ""
             Else
+                ' Two short lines: they must fit beside the page buttons even in a small window.
                 Dim rows = _data.RowCount
-                Dim text = $"{count} page{If(count = 1, "", "s")}  ·  {rows:#,##0} row{If(rows = 1, "", "s")}  ·  Net sales {Money.Format(_data.NetSales)}"
-                If _data.IsIssued Then
-                    text &= vbLf & $"Printed as {_data.ReportNo}. Printing again gives a new no."
-                Else
-                    text &= vbLf & "The report no. is given when you print."
-                End If
-                _summary.Text = text
+                Dim line2 = If(_data.IsIssued, $"Printed as {_data.ReportNo}",
+                               $"{count} page{If(count = 1, "", "s")}  ·  {rows:#,##0} row{If(rows = 1, "", "s")}")
+                _summary.Text = $"Net sales {Money.Format(_data.NetSales)}" & vbLf & line2
             End If
         End Sub
 
@@ -348,8 +345,19 @@ Namespace Modules.Reports
             Dim fieldH = Theme.Dpi(40)
             Dim lblH = Theme.LabelBold.Height + Theme.Dpi(6)
             Dim dateW = TextRenderer.MeasureText("May 30, 2026", Theme.Body).Width + Theme.Dpi(12 + 36 + 8)
-            Dim periodW = TextRenderer.MeasureText("Custom dates", Theme.Body).Width + Theme.Dpi(12 + 28 + 36 + 8)
-            Dim typeW = Math.Max(Theme.Dpi(200), Math.Min(Theme.Dpi(380), area.Width - periodW - dateW * 2 - gap * 3))
+            Dim iconW = Theme.Dpi(28)
+            Dim periodW = TextRenderer.MeasureText("Custom dates", Theme.Body).Width + Theme.Dpi(12 + 36 + 8) + iconW
+            Dim typeIdeal = ReportTypes.All.Max(Function(t) TextRenderer.MeasureText(ReportTypes.Title(t), Theme.Body).Width) + Theme.Dpi(12 + 36 + 8) + iconW
+            Dim spare = area.Width - periodW - dateW * 2 - gap * 3
+            ' Small windows: the two drop-downs lose their icons so all four fields stay inside the page.
+            Dim compact = spare < typeIdeal
+            _type.Icon = If(compact, CType(Nothing, LineIcon?), LineIcon.Reports)
+            _period.Icon = If(compact, CType(Nothing, LineIcon?), LineIcon.Bookings)
+            If compact Then
+                periodW -= iconW
+                spare += iconW
+            End If
+            Dim typeW = Math.Max(Theme.Dpi(120), Math.Min(Theme.Dpi(380), spare))
             Dim x = area.Left
             Dim y = area.Top
             For Each pair In {Tuple.Create(_lblType, CType(_type, Control), typeW), Tuple.Create(_lblPeriod, CType(_period, Control), periodW),

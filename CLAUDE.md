@@ -275,6 +275,16 @@ CHECK constraints on statuses/methods/amounts. Status/method columns are `VARCHA
   7 Create report: filters in one row on top, preview below, print bar (summary, pages, Print report) underneath;
   8 tiles: "Today's revenue", "Shoots today", "Awaiting payment" (Receipts today removed); 9 Verify removed (above).
   Reports summary "Voided bills" counts bookings voided in the period.
+  Regression harness is now IN THE REPO: `tests\LenSync.Regression` (C# net48, references the built LenSync.exe,
+  App.config -> throwaway lensync_test). Run `powershell -ExecutionPolicy Bypass -File tests\LenSync.Regression\run-regression.ps1`
+  (rebuilds lensync_test from schema+seed, builds, runs; results.csv + screenshots in tests\LenSync.Regression\out, gitignored).
+  It has a Bot that answers CardWindow popups (handlers are dequeued before they run and clicks are posted with
+  BeginInvoke: a click that opens a modal dialog would otherwise re-enter the bot) and a layout sweep that flags
+  overlapping / out-of-page controls on every tab at 1032x640 and 1366x768. 2026-11-24: 74/74 pass.
+  Fixed from that run: seed.sql collation error (closed_reason UPDATE), toolbar overlap on small windows
+  (ModulePage.LayoutToolbar now wraps filters to a 2nd row), Reports filter row overflow (icons drop when tight),
+  Email page SSL checkbox/notice outside the page, clipped columns (Dashboard recent, Billing, Bookings, Sales),
+  receipt preview too small, weekly chart "This week" label clipped.
   Full regression (2026-11-11): 245 checks pass on a throwaway lensync_test (FS 107, SEC 94, REL 12, PERF 3, USA 29),
   incl. lockout, reset codes, role access, re-pricing, rollback mid-save (rename transaction_items), void, dashboard,
   reports, every tab and dialog rendered at 1032x594. Fixes from it: column widths at 1080p/150% (Sales receipt no. /

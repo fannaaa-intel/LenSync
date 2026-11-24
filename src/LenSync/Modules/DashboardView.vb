@@ -59,12 +59,12 @@ Namespace Modules
 
             _recent.ColumnHeadersVisible = False
             _recent.RowTemplate.Height = Theme.Dpi(38)
-            _recent.SolidStatuses.Clear()
-            _recent.SolidStatuses.Add("Completed")
-            _recent.AddTextColumn("receipt", "Receipt no.", 27)
-            _recent.AddTextColumn("customer", "Customer", 35)
-            _recent.AddTextColumn("amount", "Amount", 20, alignRight:=True)
-            _recent.AddStatusColumn("status", "Status", 18)
+            ' No status column: receipts are final once paid (voiding happens in Billing), so it would always say
+            ' Completed. Receipts voided under the old rule show "Voided" in place of the amount.
+            ' "AR-2026-000123" must stay whole at the smallest window; the customer name gives way first.
+            _recent.AddTextColumn("receipt", "Receipt no.", 42)
+            _recent.AddTextColumn("customer", "Customer", 32)
+            _recent.AddTextColumn("amount", "Amount", 26, alignRight:=True)
             _recent.EmptyText = "No receipts yet."
             _recent.AccessibleName = "Recent transactions"
 
@@ -168,9 +168,14 @@ Namespace Modules
 
             _recent.Rows.Clear()
             For Each s In snap.Recent
-                Dim i = _recent.Rows.Add(s.ReceiptNo, s.CustomerName, Money.Format(s.Total), s.Status)
+                Dim voided = s.Status <> "Completed"
+                Dim i = _recent.Rows.Add(s.ReceiptNo, s.CustomerName, If(voided, s.Status, Money.Format(s.Total)))
                 _recent.Rows(i).Tag = s
                 _recent.Rows(i).Cells("receipt").ToolTipText = $"{AddService.Display.Stamp(s.CreatedAt)} · {s.PaymentMethod} · {s.CashierName}"
+                If voided Then
+                    _recent.Rows(i).DefaultCellStyle.ForeColor = Theme.Silver
+                    _recent.Rows(i).Cells("amount").ToolTipText = $"{Money.Format(s.Total)} (not counted)"
+                End If
             Next
             _recent.ClearSelection()
 

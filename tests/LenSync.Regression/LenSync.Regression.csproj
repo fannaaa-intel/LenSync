@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ApplicationManifest>..\..\src\LenSync\app.manifest</ApplicationManifest>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Configuration" />
+    <Reference Include="LenSync">
+      <HintPath>..\..\src\LenSync\bin\Debug\net48\LenSync.exe</HintPath>
+    </Reference>
+    <Reference Include="MySql.Data">
+      <HintPath>..\..\src\LenSync\bin\Debug\net48\MySql.Data.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <Target Name="CopyAppDeps" AfterTargets="Build">
+    <ItemGroup>
+      <AppDeps Include="..\..\src\LenSync\bin\Debug\net48\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AppDeps)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

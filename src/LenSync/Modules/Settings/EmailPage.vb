@@ -23,7 +23,7 @@ Namespace Modules.Settings
         Private ReadOnly _txtFrom As New LsTextBox()
         Private ReadOnly _txtHost As New LsTextBox()
         Private ReadOnly _txtPort As New LsTextBox()
-        Private ReadOnly _chkSsl As New LsCheck("Use a secure connection (TLS)")
+        Private ReadOnly _chkSsl As New LsCheck("Use TLS (secure)")
         Private ReadOnly _notice As New InlineNotice()
         Private ReadOnly _btnSave As New LsButton("Save changes", ButtonVariant.Primary)
         Private ReadOnly _btnTest As New LsButton("Send test email", ButtonVariant.Secondary)
@@ -50,8 +50,8 @@ Namespace Modules.Settings
             _txtPort.MaxLength = 5
             _chkSsl.Width = _chkSsl.PreferredWidth()
             Controls.AddRange({_chkSsl, _notice})
-            _notice.ShowMessage("Use a Gmail App Password, not your normal Gmail password. In your Google Account open " &
-                                "Security, turn on 2-Step Verification, then create an App Password for LENSYNC.", NoticeKind.Info, False)
+            _notice.ShowMessage("Use a Gmail App Password, not your Gmail password: Google Account > Security > " &
+                                "2-Step Verification > App passwords.", NoticeKind.Info, False)
 
             For Each t In {_txtUser, _txtPassword, _txtFrom, _txtHost, _txtPort}
                 AddHandler t.TextChanged, Sub() UpdateButtons()
@@ -162,8 +162,15 @@ Namespace Modules.Settings
             Dim portW = Theme.Dpi(120)
             place(_txtPort, rightX, area.Top + block, portW)
             _chkSsl.Location = New Point(rightX + portW + Theme.Dpi(20), _txtPort.Top + (fieldH - _chkSsl.Height) \ 2)
+            ' The App Password tip goes under the fields when there is room, otherwise into the free slot beside
+            ' Sender name (small windows), so it is never cut off.
+            Dim noticeH = Theme.Dpi(58)
             Dim noticeTop = area.Top + block * 3 + Theme.Dpi(4)
-            _notice.Bounds = New Rectangle(area.Left, noticeTop, Math.Min(area.Width, colW * 2 + colGap), Theme.Dpi(58))
+            If noticeTop + noticeH <= area.Bottom Then
+                _notice.Bounds = New Rectangle(area.Left, noticeTop, Math.Min(area.Width, colW * 2 + colGap), noticeH)
+            Else
+                _notice.Bounds = New Rectangle(rightX, _labels(_txtFrom).Top, colW, labelH + Theme.Dpi(4) + fieldH)
+            End If
         End Sub
 
     End Class

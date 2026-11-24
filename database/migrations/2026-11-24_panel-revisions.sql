@@ -30,6 +30,11 @@ UPDATE bookings
    SET closed_reason = LEFT(TRIM(SUBSTRING_INDEX(notes, 'Cancelled: ', -1)), 255),
        closed_at     = IFNULL(closed_at, updated_at)
  WHERE status = 'Cancelled' AND closed_reason IS NULL AND notes LIKE '%Cancelled: %';
+-- The old sample data (seed.sql) kept the reason of its cancelled booking as the plain note.
+UPDATE bookings
+   SET closed_reason = LEFT(TRIM(notes), 255),
+       closed_at     = IFNULL(closed_at, updated_at)
+ WHERE status = 'Cancelled' AND closed_reason IS NULL AND TRIM(IFNULL(notes, '')) <> '';
 
 ALTER TABLE transactions
     ADD COLUMN IF NOT EXISTS tax_rate   DECIMAL(5,2)  NOT NULL DEFAULT 0.00 AFTER discount_reason,

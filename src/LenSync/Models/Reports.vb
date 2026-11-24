@@ -31,11 +31,11 @@ Namespace Models
 
         Public Shared Function Description(t As ReportType) As String
             Select Case t
-                Case ReportType.DailySales : Return "One line per day: receipts, gross amount, discounts, net sales, downpayments and balances paid."
-                Case ReportType.Transactions : Return "Every receipt in the period. Voided receipts are listed but not added to the totals."
+                Case ReportType.DailySales : Return "One line per day: receipts, gross, discounts, tax, net sales, downpayments and balances paid."
+                Case ReportType.Transactions : Return "Every receipt in the period with its total (tax included)."
                 Case ReportType.PaymentMethods : Return "Money received through Cash, GCash and Maya, counting both downpayments and balance payments."
-                Case ReportType.Staff : Return "Receipts, net sales, discounts given and voided sales for each cashier."
-                Case Else : Return "How often each package and add-on was billed, and the amount (before discounts)."
+                Case ReportType.Staff : Return "Receipts, net sales, discounts given and tax collected for each cashier."
+                Case Else : Return "How often each package and add-on was billed, and the amount (before discounts and tax)."
             End Select
         End Function
 
@@ -129,7 +129,7 @@ Namespace Models
         End Property
     End Class
 
-    ''' <summary>A row of report_logs (Reports > History, Verify).</summary>
+    ''' <summary>A row of report_logs (Reports > History).</summary>
     Public Class ReportLog
         Public Property Id As Integer
         Public Property ReportNo As String = ""
@@ -150,19 +150,6 @@ Namespace Models
                 Return If(ReportTypes.FromKey(TypeKey, t), ReportTypes.Title(t), TypeKey)
             End Get
         End Property
-    End Class
-
-    Public Enum VerifyOutcome
-        NotFound
-        CodeMismatch
-        Genuine
-    End Enum
-
-    Public Class VerifyResult
-        Public Property Outcome As VerifyOutcome
-        Public Property Log As ReportLog
-        ''' <summary>For a genuine report: True if today's data for that period still gives the same fingerprint.</summary>
-        Public Property DataUnchanged As Boolean
     End Class
 
 End Namespace

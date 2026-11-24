@@ -10,18 +10,19 @@ Imports LenSync.Models
 Namespace UI.Controls
 
     ''' <summary>
-    ''' Dashboard "Sales, last 7 days": one column per day, the amount printed on top of each bar (no y-axis), today in
-    ''' ink inside viewfinder brackets, days without sales as a flat stub. Hover or Left/Right shows a small card with
-    ''' the date, amount and receipts; click / Enter raises DayClicked. Bars grow in, and glide to new heights when the
-    ''' dashboard refreshes.
+    ''' Dashboard sales chart: one column per day, week or month (SalesPeriod), the amount printed on top of each bar
+    ''' (no y-axis), the current day/week/month in ink inside viewfinder brackets, periods without sales as a flat
+    ''' stub. Hover or Left/Right shows a small card with the dates, amount and receipts; click / Enter raises
+    ''' BarClicked. Bars grow in, and glide to new heights when the dashboard refreshes.
     ''' </summary>
-    Public Class WeekChart
+    Public Class SalesChart
         Inherits Control
 
         Private Shared ReadOnly PH As CultureInfo = CultureInfo.GetCultureInfo("en-PH")
         Private Const GrowMs As Integer = 240
 
-        Private _days As New List(Of DaySales)
+        Private _bars As New List(Of SalesBucket)
+        Private _period As SalesPeriod = SalesPeriod.Daily
         Private _today As Date = Date.Today
         Private _from As Decimal() = {}
         Private _to As Decimal() = {}
@@ -30,9 +31,9 @@ Namespace UI.Controls
         Private _keyIndex As Integer = -1
         Private ReadOnly _tween As New Tween()
 
-        Public Event DayClicked As EventHandler(Of Date)
+        Public Event BarClicked As EventHandler(Of SalesBucket)
 
-        ''' <summary>True when clicking a day does something (the hand cursor shows).</summary>
+        ''' <summary>True when clicking a bar does something (the hand cursor shows).</summary>
         Public Property Clickable As Boolean
 
         Public Sub New()
@@ -43,16 +44,17 @@ Namespace UI.Controls
             AccessibleRole = AccessibleRole.Chart
         End Sub
 
-        ''' <summary>Shows <paramref name="days"/> (oldest first). Bars animate from their current heights.</summary>
-        Public Sub SetDays(days As IList(Of DaySales), today As Date)
-            Dim current = CurrentValues()
-            _days = days.ToList()
+        ''' <summary>Shows <paramref name="bars"/> (oldest first). Bars animate from their current heights (from zero on a new period).</summary>
+        Public Sub SetBuckets(bars As IList(Of SalesBucket), period As SalesPeriod, today As Date)
+            Dim current = If(period = _period, CurrentValues(), New Decimal() {})
+            _bars = bars.ToList()
+            _period = period
             _today = today.Date
-            _to = _days.Select(Function(d) d.Total).ToArray()
+            _to = _bars.Select(Function(b) b.Total).ToArray()
             _from = If(current.Length = _to.Length, current, New Decimal(_to.Length - 1) {})
-            If _hover >= _days.Count Then _hover = -1
-            If _keyIndex >= _days.Count Then _keyIndex = -1
-            AccessibleDescription = String.Join("; ", _days.Select(Function(d) $"{DayName(d.Day, True)} {Money.Format(d.Total)}"))
+            If _hover >= _bars.Count Then _hover = -1
+            If _keyIndex >= _bars.Count Then _keyIndex = -1
+            AccessibleDescription = String.Join("; ", _bars.Select(Function(b, i) $"{FullLabel(i)} {Money.Format(b.Total)}"))
             If _from.SequenceEqual(_to) OrElse Not IsHandleCreated Then
                 _t = 1
                 Invalidate()
@@ -70,10 +72,45 @@ Namespace UI.Controls
             Return _to.Select(Function(v, i) If(i < _from.Length, _from(i) + (v - _from(i)) * k, v)).ToArray()
         End Function
 
-        Private Function DayName(d As Date, full As Boolean) As String
-            If d = _today Then Return If(full, "Today, " & d.ToString("MMM d", PH), "Today")
-            Return d.ToString(If(full, "ddd, MMM d", "ddd d"), PH)
+        Private Function IsCurrent(i As Integer) As Boolean
+            Return _bars(i).Contains(_today)
         End Function
+
+        ' ---------------------------------------------------------------- labels
+        ''' <summary>Under the bar: "Mon 23" / "Today", "Nov 16" / "This week", "Jun" / "Nov".</summary>
+        Private Function ShortLabel(i As Integer) As String
+            Dim b = _bars(i)
+            Select Case _period
+                Case SalesPeriod.Weekly : Return If(IsCurrent(i), "This week", b.First.ToString("MMM d", PH))
+                Case SalesPeriod.Monthly : Return b.First.ToString("MMM", PH)
+                Case Else : Return If(IsCurrent(i), "Today", b.First.ToString("ddd d", PH))
+            End Select
+        End Function
+
+        ''' <summary>In the detail card: "Today, Nov 24", "Week of Nov 16 – 22", "November 2026".</summary>
+        Private Function FullLabel(i As Integer) As String
+            Dim b = _bars(i)
+            Select Case _period
+                Case SalesPeriod.Weekly
+                    Dim range = If(b.First.Month = b.Last.Month, $"{b.First.ToString("MMM d", PH)} – {b.Last.Day}",
+                                   $"{b.First.ToString("MMM d", PH)} – {b.Last.ToString("MMM d", PH)}")
+                    Return If(IsCurrent(i), "This week, ", "Week of ") & range
+                Case SalesPeriod.Monthly
+                    Return If(IsCurrent(i), "This month, ", "") & b.First.ToString("MMMM yyyy", PH)
+                Case Else
+                    Return If(IsCurrent(i), "Today, " & b.First.ToString("MMM d", PH), b.First.ToString("ddd, MMM d", PH))
+            End Select
+        End Function
+
+        Private ReadOnly Property EmptyText As String
+            Get
+                Select Case _period
+                    Case SalesPeriod.Weekly : Return "No completed sales in the last 8 weeks"
+                    Case SalesPeriod.Monthly : Return "No completed sales in the last 6 months"
+                    Case Else : Return "No completed sales in the last 7 days"
+                End Select
+            End Get
+        End Property
 
         ' ---------------------------------------------------------------- geometry
         Private ReadOnly Property AxisH As Integer
@@ -101,7 +138,7 @@ Namespace UI.Controls
         End Property
 
         Private Function Slot(i As Integer) As Rectangle
-            Dim n = Math.Max(1, _days.Count)
+            Dim n = Math.Max(1, _bars.Count)
             Dim x0 = CInt(Width * i / n)
             Dim x1 = CInt(Width * (i + 1) / n)
             Return New Rectangle(x0, 0, x1 - x0, Height)
@@ -117,8 +154,8 @@ Namespace UI.Controls
         End Function
 
         Private Function IndexAt(p As Point) As Integer
-            If _days.Count = 0 OrElse p.Y < 0 OrElse p.Y > Height Then Return -1
-            For i = 0 To _days.Count - 1
+            If _bars.Count = 0 OrElse p.Y < 0 OrElse p.Y > Height Then Return -1
+            For i = 0 To _bars.Count - 1
                 If Slot(i).Contains(p) Then Return i
             Next
             Return -1
@@ -150,7 +187,7 @@ Namespace UI.Controls
         Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
             MyBase.OnMouseUp(e)
             Dim i = IndexAt(e.Location)
-            If e.Button = MouseButtons.Left AndAlso Clickable AndAlso i >= 0 Then RaiseEvent DayClicked(Me, _days(i).Day)
+            If e.Button = MouseButtons.Left AndAlso Clickable AndAlso i >= 0 Then RaiseEvent BarClicked(Me, _bars(i))
         End Sub
 
         Protected Overrides Function IsInputKey(keyData As Keys) As Boolean
@@ -159,12 +196,12 @@ Namespace UI.Controls
 
         Protected Overrides Sub OnKeyDown(e As KeyEventArgs)
             MyBase.OnKeyDown(e)
-            If _days.Count = 0 Then Return
+            If _bars.Count = 0 Then Return
             Select Case e.KeyCode
-                Case Keys.Left : _keyIndex = Math.Max(0, If(_keyIndex < 0, _days.Count - 1, _keyIndex - 1))
-                Case Keys.Right : _keyIndex = Math.Min(_days.Count - 1, If(_keyIndex < 0, _days.Count - 1, _keyIndex + 1))
+                Case Keys.Left : _keyIndex = Math.Max(0, If(_keyIndex < 0, _bars.Count - 1, _keyIndex - 1))
+                Case Keys.Right : _keyIndex = Math.Min(_bars.Count - 1, If(_keyIndex < 0, _bars.Count - 1, _keyIndex + 1))
                 Case Keys.Enter
-                    If Clickable AndAlso _keyIndex >= 0 Then RaiseEvent DayClicked(Me, _days(_keyIndex).Day)
+                    If Clickable AndAlso _keyIndex >= 0 Then RaiseEvent BarClicked(Me, _bars(_keyIndex))
                 Case Else : Return
             End Select
             e.Handled = True
@@ -184,13 +221,13 @@ Namespace UI.Controls
             Dim g = e.Graphics
             g.Clear(Theme.White)
             Gfx.HighQuality(g)
-            If _days.Count = 0 Then Return
+            If _bars.Count = 0 Then Return
             Dim values = CurrentValues()
             Dim max = Math.Max(_to.DefaultIfEmpty(0D).Max(), values.DefaultIfEmpty(0D).Max())
             Dim active = ActiveIndex
             Const center As TextFormatFlags = TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine
 
-            ' The highlighted day: a soft rounded backdrop behind its column.
+            ' The highlighted bar: a soft rounded backdrop behind its column.
             If active >= 0 Then
                 Dim s = Slot(active)
                 Using path = Gfx.RoundedRect(New RectangleF(s.X + Theme.Dpi(4), Theme.Dpi(2), s.Width - Theme.Dpi(8), Height - Theme.Dpi(2)), Theme.Dpi(6.0F))
@@ -205,42 +242,42 @@ Namespace UI.Controls
                 g.DrawLine(p, 0, Baseline, Width, Baseline)
             End Using
 
-            For i = 0 To _days.Count - 1
-                Dim d = _days(i)
-                Dim isToday = d.Day = _today
+            For i = 0 To _bars.Count - 1
+                Dim current = IsCurrent(i)
                 Dim s = Slot(i)
                 Dim bar = BarRect(i, values, max)
                 If bar.Height > 0 Then
-                    Dim color = If(isToday, Theme.Ink, If(i = active, Theme.Slate, Theme.Silver))
+                    Dim color = If(current, Theme.Ink, If(i = active, Theme.Slate, Theme.Silver))
                     Using path = TopRounded(bar, Theme.Dpi(4.0F))
                         Using b As New SolidBrush(color)
                             g.FillPath(b, path)
                         End Using
                     End Using
                 Else
-                    ' No sales: a flat stub on the baseline, so the day still reads as "₱0".
+                    ' No sales: a flat stub on the baseline, so the bar still reads as "₱0".
                     Dim stub As New RectangleF(bar.X, Baseline - Theme.Dpi(3), bar.Width, Theme.Dpi(3))
                     Using path = Gfx.RoundedRect(stub, Theme.Dpi(1.5F))
-                        Using b As New SolidBrush(If(isToday, Theme.Slate, Theme.Mist))
+                        Using b As New SolidBrush(If(current, Theme.Slate, Theme.Mist))
                             g.FillPath(b, path)
                         End Using
                     End Using
                 End If
 
-                ' Amount on top of the bar (always for today, otherwise only when there were sales).
-                If _to(i) > 0D OrElse isToday Then
+                ' Amount on top of the bar (always for the current one, otherwise only when there were sales).
+                If _to(i) > 0D OrElse current Then
                     Dim top = If(bar.Height > 0, bar.Top, Baseline - Theme.Dpi(3)) - ValueH
                     Dim txt = "₱" & Decimal.Round(values(i), 0).ToString("#,##0", CultureInfo.InvariantCulture)
-                    TextRenderer.DrawText(g, txt, If(isToday, Theme.LabelBold, Theme.Hint), New Rectangle(s.X - Theme.Dpi(8), top, s.Width + Theme.Dpi(16), ValueH),
-                                          If(isToday OrElse i = active, Theme.Ink, Theme.Slate), center)
+                    TextRenderer.DrawText(g, txt, If(current, Theme.LabelBold, Theme.Hint), New Rectangle(s.X - Theme.Dpi(8), top, s.Width + Theme.Dpi(16), ValueH),
+                                          If(current OrElse i = active, Theme.Ink, Theme.Slate), center)
                 End If
 
-                ' Day label under the baseline.
-                TextRenderer.DrawText(g, DayName(d.Day, False), If(isToday, Theme.LabelBold, Theme.Label),
-                                      New Rectangle(s.X, Baseline + Theme.Dpi(2), s.Width, AxisH - Theme.Dpi(2)), If(isToday, Theme.Ink, Theme.Slate), center)
+                ' Label under the baseline.
+                TextRenderer.DrawText(g, ShortLabel(i), If(current, Theme.LabelBold, Theme.Label),
+                                      New Rectangle(s.X, Baseline + Theme.Dpi(2), s.Width, AxisH - Theme.Dpi(2)), If(current, Theme.Ink, Theme.Slate),
+                                      center Or TextFormatFlags.EndEllipsis)
 
-                ' Today sits inside viewfinder brackets (LENSYNC's motif).
-                If isToday Then
+                ' The current day/week/month sits inside viewfinder brackets (LENSYNC's motif).
+                If current Then
                     Dim fr As New RectangleF(s.X + Theme.Dpi(6), Theme.Dpi(3), s.Width - Theme.Dpi(12), Height - Theme.Dpi(4))
                     Using p As New Pen(Theme.Silver, Theme.Dpi(1.2F))
                         Gfx.DrawViewfinder(g, fr, Theme.Dpi(7.0F), p)
@@ -249,19 +286,19 @@ Namespace UI.Controls
             Next
 
             If _to.All(Function(v) v = 0D) Then
-                TextRenderer.DrawText(g, "No completed sales in the last 7 days", Theme.Label,
+                TextRenderer.DrawText(g, EmptyText, Theme.Label,
                                       New Rectangle(0, PlotTop, Width, Math.Max(0, Baseline - PlotTop - Theme.Dpi(8))), Theme.Slate, center)
             End If
 
             If active >= 0 Then DrawDetail(g, active, BarRect(active, values, max))
         End Sub
 
-        ''' <summary>A small card next to the highlighted bar: date, amount, receipts.</summary>
+        ''' <summary>A small card next to the highlighted bar: dates, amount, receipts.</summary>
         Private Sub DrawDetail(g As Graphics, i As Integer, bar As Rectangle)
-            Dim d = _days(i)
-            Dim line1 = DayName(d.Day, True)
-            Dim line2 = Money.Format(d.Total)
-            Dim line3 = If(d.Receipts = 0, "No receipts", $"{d.Receipts} receipt{If(d.Receipts = 1, "", "s")}") & If(Clickable, "  ·  click for Sales", "")
+            Dim b = _bars(i)
+            Dim line1 = FullLabel(i)
+            Dim line2 = Money.Format(b.Total)
+            Dim line3 = If(b.Receipts = 0, "No receipts", $"{b.Receipts} receipt{If(b.Receipts = 1, "", "s")}") & If(Clickable, "  ·  click for Sales", "")
             Const flags As TextFormatFlags = TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine Or TextFormatFlags.NoPadding
             Dim w = {TextRenderer.MeasureText(g, line1, Theme.Hint, Size.Empty, flags).Width,
                      TextRenderer.MeasureText(g, line2, Theme.BodyBold, Size.Empty, flags).Width,
@@ -275,15 +312,15 @@ Namespace UI.Controls
             Dim y = Math.Max(Theme.Dpi(2), Math.Min(Baseline - h - Theme.Dpi(4), If(bar.Height > 0, bar.Top, Baseline) - h \ 2))
             Dim card As New Rectangle(x, y, w, h)
             For k = 1 To 3
-                Using b As New SolidBrush(Color.FromArgb(14 \ k, Theme.Overlay))
+                Using br As New SolidBrush(Color.FromArgb(14 \ k, Theme.Overlay))
                     Using path = Gfx.RoundedRect(New RectangleF(card.X - k + 1, card.Y - k + 3, card.Width + (k - 1) * 2, card.Height + (k - 1) * 2), Theme.Dpi(6.0F) + k)
-                        g.FillPath(b, path)
+                        g.FillPath(br, path)
                     End Using
                 End Using
             Next
             Using path = Gfx.RoundedRect(card, Theme.Dpi(6.0F))
-                Using b As New SolidBrush(Theme.White)
-                    g.FillPath(b, path)
+                Using br As New SolidBrush(Theme.White)
+                    g.FillPath(br, path)
                 End Using
                 Using p As New Pen(Theme.Mist)
                     g.DrawPath(p, path)

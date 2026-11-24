@@ -183,9 +183,11 @@ Namespace Modules.Settings
             Dim u = Selected
             If u Is Nothing Then Return
             Dim activate = Not u.IsActive
+            ' Yes/No guard against an accidental click; "No" is focused, so Enter/Esc keep the account active.
             If Not activate AndAlso Not LsDialog.Confirm(
-                $"{u.FullName} won't be able to log in. Their bookings, sales and history stay in the records.",
-                "Deactivate this account?", "Deactivate", "Keep active") Then Return
+                $"Are you sure you want to deactivate {u.FullName} ({u.Username})? They won't be able to log in. " &
+                "Their bookings, sales and history stay in the records, and you can reactivate the account later.",
+                "Deactivate this account?", "Yes, deactivate", "No, keep active") Then Return
             Dim id = u.Id
             Dim result = Await RunAsync(Function() UserAdmin.SetActive(id, activate), "Changing user status")
             If result Is Nothing OrElse FormErrors.Show(result, Nothing) Then Return

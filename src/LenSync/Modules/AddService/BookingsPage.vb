@@ -18,7 +18,7 @@ Namespace Modules.AddService
     Public Class BookingsPage
         Inherits ModulePage
 
-        Private Shared ReadOnly Filters As BookingFilter() = {BookingFilter.Open, BookingFilter.Paid, BookingFilter.Cancelled, BookingFilter.All}
+        Private Shared ReadOnly Filters As BookingFilter() = {BookingFilter.Open, BookingFilter.Paid, BookingFilter.Cancelled, BookingFilter.Voided, BookingFilter.All}
 
         Private ReadOnly _search As New LsTextBox()
         Private ReadOnly _filter As New LsChoice()
@@ -36,9 +36,9 @@ Namespace Modules.AddService
             _search.Placeholder = "Search bookings"
             _search.FieldName = "Search bookings"
             _search.Icon = LineIcon.Search
-            _filter.SetItems({"Open", "Paid", "Cancelled", "All"})
+            _filter.SetItems({"Open", "Paid", "Cancelled", "Voided", "All"})
             _filter.AccessibleName = "Show bookings"
-            _filter.Width = Theme.Dpi(300)
+            _filter.Width = Theme.Dpi(370)
             _btnEdit.FitToText(90)
             _btnNext.FitToText(120)
             _grid.EmptyText = "No bookings to show."
@@ -49,6 +49,8 @@ Namespace Modules.AddService
             _grid.AddTextColumn("package", "Package", 18)
             _grid.AddTextColumn("schedule", "Schedule", 19)
             _grid.AddTextColumn("dp", "Downpayment", 14, alignRight:=True)
+            ' Cancelled / voided lists show why (the reason is required when closing a booking).
+            _grid.AddTextColumn("reason", "Reason", 30)
             _grid.AddStatusColumn("status", "Status", 12)
             Controls.AddRange({_search, _filter, _btnEdit, _btnNext, _btnCancel, _grid})
 
@@ -82,8 +84,16 @@ Namespace Modules.AddService
             Dim data = Await RunAsync(Function() BookingAdmin.List(filter), "Loading bookings")
             If data Is Nothing Then Return
             _bookings = data
+            PerformLayout()   ' the Reason column shows only for closed lists
             Fill()
         End Function
+
+        Private ReadOnly Property ShowsReasons As Boolean
+            Get
+                Dim f = Filters(Math.Max(0, _filter.SelectedIndex))
+                Return f = BookingFilter.Cancelled OrElse f = BookingFilter.Voided
+            End Get
+        End Property
 
         Private Async Sub ReloadQuietly()
             If Not IsHandleCreated Then Return
@@ -98,9 +108,15 @@ Namespace Modules.AddService
                 If q.Length > 0 AndAlso Not (Display.Has(b.CustomerName, q) OrElse Display.Has(b.BookingNo, q) OrElse
                                              Display.Has(b.ContactNo, q) OrElse Display.Has(b.PackageName, q)) Then Continue For
                 Dim dp = If(b.Downpayment > 0D, Money.Format(b.Downpayment), "—")
+                Dim reason = If(b.ClosedReason.Length > 0, b.ClosedReason, "—")
                 Dim i = _grid.Rows.Add(b.BookingNo, b.CustomerName, If(b.PackageName.Length > 0, b.PackageName, "—"),
-                                       Display.Schedule(b.ScheduleAt), dp, b.Status)
+                                       Display.Schedule(b.ScheduleAt), dp, reason, b.Status)
                 _grid.Rows(i).Tag = b
+                If b.ClosedReason.Length > 0 Then
+                    Dim closed = If(b.ClosedAt.HasValue, $"{b.Status} {Display.Stamp(b.ClosedAt.Value)}: ", $"{b.Status}: ")
+                    _grid.Rows(i).Cells("reason").ToolTipText = closed & b.ClosedReason
+                    _grid.Rows(i).Cells("status").ToolTipText = closed & b.ClosedReason
+                End If
                 If b.Downpayment > 0D Then
                     _grid.Rows(i).Cells("dp").ToolTipText = $"Paid via {b.DownpaymentMethod}" & If(b.DownpaymentRef.Length > 0, $", ref {b.DownpaymentRef}", "")
                 End If
@@ -132,8 +148,11 @@ Namespace Modules.AddService
             Dim bottom = LayoutToolbar(area, {_search, _filter}, {_btnCancel, _btnNext, _btnEdit}, 150, 320)
             Dim gridTop = bottom + Theme.Dpi(16)
             _grid.Bounds = New Rectangle(area.Left, gridTop, area.Width, Math.Max(0, area.Bottom - gridTop))
-            ' Narrow windows drop the Package column so the rest stays readable.
-            _grid.Columns("package").Visible = area.Width >= Theme.Dpi(820)
+            ' Closed lists trade the Downpayment and Package columns for the reason; narrow windows drop Package.
+            Dim reasons = ShowsReasons
+            _grid.Columns("reason").Visible = reasons
+            _grid.Columns("dp").Visible = Not reasons
+            _grid.Columns("package").Visible = Not reasons AndAlso area.Width >= Theme.Dpi(820)
         End Sub
 
         ' ---------------------------------------------------------------- actions
@@ -221,14 +240,14 @@ Namespace Modules.AddService
             Dim id = b.Id
             Dim dpNote = If(b.Downpayment > 0D, $" The {Money.Format(b.Downpayment)} downpayment stays on record; refund it according to studio policy.", "")
             Using dlg As New ReasonDialog("Cancel booking", $"Cancel {b.BookingNo}?",
-                                          $"{b.CustomerName}'s booking will be closed and can't be billed.{dpNote}",
+                                          $"{b.CustomerName}'s booking will be closed and can't be billed. A reason is required.{dpNote}",
                                           "Cancel booking", "e.g. Customer rescheduled to next month",
                                           Function(reason) BookingAdmin.Cancel(id, reason))
                 If dlg.ShowCard() <> DialogResult.OK Then Return
             End Using
             AppEvents.RaiseSalesChanged()
             Await ReloadAsync()
-            Toast.Show($"{b.BookingNo} was cancelled.", ToastKind.Success)
+            Toast.Show($"{b.BookingNo} was cancelled. See the reason under Cancelled.", ToastKind.Success)
         End Sub
 
     End Class

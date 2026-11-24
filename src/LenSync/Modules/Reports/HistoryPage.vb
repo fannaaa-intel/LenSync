@@ -14,7 +14,6 @@ Namespace Modules.Reports
     ''' <summary>
     ''' Reports > History: every printed report (report_logs), newest first. "Open again" loads the same report and
     ''' period on the Create tab; printing it there gives a new report no. (old numbers are never reprinted).
-    ''' Verification codes are not listed: they are the proof printed on paper.
     ''' </summary>
     Public Class HistoryPage
         Inherits ModulePage

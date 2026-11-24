@@ -7,16 +7,21 @@ Imports LenSync.Core
 Imports LenSync.Models
 Imports LenSync.UI
 Imports LenSync.UI.Controls
+Imports LenSync.UI.Dialogs
 
 Namespace Modules.AddService
 
-    ''' <summary>Add Service > Billing: shoots that are done and waiting for payment. Select one and bill it.</summary>
+    ''' <summary>
+    ''' Add Service > Billing: shoots that are done and waiting for payment. Select one and bill it, or void the
+    ''' unpaid bill (VOID_SALE only, reason required) before any payment is recorded.
+    ''' </summary>
     Public Class BillingPage
         Inherits ModulePage
 
         Private ReadOnly _search As New LsTextBox()
         Private ReadOnly _grid As New LsGrid()
         Private ReadOnly _btnBill As New LsButton("Bill this booking", ButtonVariant.Primary)
+        Private ReadOnly _btnVoid As New LsButton("Void bill", ButtonVariant.Secondary)
         Private _bookings As New List(Of Booking)
         Private _busy As Boolean
 
@@ -31,7 +36,8 @@ Namespace Modules.AddService
             _grid.AddTextColumn("shoot", "Shoot", 23)
             _grid.AddTextColumn("price", "Package price", 13, alignRight:=True)
             _grid.AddTextColumn("dp", "Downpayment", 13, alignRight:=True)
-            Controls.AddRange({_search, _btnBill, _grid})
+            _btnVoid.Visible = Session.HasPermission(Permissions.VoidSale)
+            Controls.AddRange({_search, _btnBill, _btnVoid, _grid})
 
             AddHandler _search.TextChanged, Sub() Fill()
             AddHandler _grid.SelectionChanged, Sub() UpdateButtons()
@@ -43,6 +49,7 @@ Namespace Modules.AddService
                                           End If
                                       End Sub
             AddHandler _btnBill.Click, Sub() BillSelected()
+            AddHandler _btnVoid.Click, Sub() VoidSelected()
             UpdateButtons()
         End Sub
 
@@ -77,10 +84,11 @@ Namespace Modules.AddService
 
         Private Sub UpdateButtons()
             _btnBill.Enabled = Not _busy AndAlso TypeOf _grid.SelectedItem Is Booking
+            _btnVoid.Enabled = _btnBill.Enabled
         End Sub
 
         Protected Overrides Sub LayoutContent(area As Rectangle)
-            Dim bottom = LayoutToolbar(area, {_search}, {_btnBill}, 160, 360)
+            Dim bottom = LayoutToolbar(area, {_search}, {_btnBill, _btnVoid}, 160, 360)
             Dim gridTop = bottom + Theme.Dpi(16)
             _grid.Bounds = New Rectangle(area.Left, gridTop, area.Width, Math.Max(0, area.Bottom - gridTop))
             _grid.Columns("package").Visible = area.Width >= Theme.Dpi(820)
@@ -97,6 +105,22 @@ Namespace Modules.AddService
                 _busy = False
             End Try
             Await ReloadAsync()
+        End Sub
+
+        Private Async Sub VoidSelected()
+            Dim b = TryCast(_grid.SelectedItem, Booking)
+            If b Is Nothing OrElse _busy OrElse Not Session.HasPermission(Permissions.VoidSale) Then Return
+            Dim id = b.Id
+            Dim dpNote = If(b.Downpayment > 0D, $" The {Money.Format(b.Downpayment)} downpayment stays on record.", "")
+            Using dlg As New ReasonDialog("Void bill", $"Void the bill for {b.CustomerName}?",
+                                          $"No payment is recorded and no receipt is issued. {b.BookingNo} is closed as Voided and leaves Billing.{dpNote} This can't be undone.",
+                                          "Void bill", "e.g. Customer declined the service",
+                                          Function(reason) Billing.VoidBill(id, reason))
+                If dlg.ShowCard() <> DialogResult.OK Then Return
+            End Using
+            AppEvents.RaiseSalesChanged()
+            Await ReloadAsync()
+            Toast.Show($"The bill for {b.BookingNo} was voided. No receipt was issued.", ToastKind.Success)
         End Sub
 
     End Class

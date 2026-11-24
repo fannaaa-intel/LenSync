@@ -23,7 +23,7 @@ INSERT INTO permissions (id, perm_key, label) VALUES
     (3, 'ADD_SERVICE', 'Add Service (bookings, billing and payment)'),
     (4, 'REPORTS',     'Reports'),
     (5, 'SETTINGS',    'Settings (users, roles, pricing, business info)'),
-    (6, 'VOID_SALE',   'Void a completed sale');
+    (6, 'VOID_SALE',   'Void an unpaid bill (in Billing, before payment)');
 
 -- Admin: everything
 INSERT INTO role_permissions (role_id, permission_id) SELECT 1, id FROM permissions;
@@ -81,7 +81,9 @@ INSERT INTO bookings (booking_no, customer_name, contact_no, customer_email, pac
     (CONCAT('BK-', @y, '-0007'), 'Grace Villanueva',  '09781234567', 'grace.v@example.com',       6,
         DATE_FORMAT(DATE_ADD(NOW(), INTERVAL 30 DAY), '%Y-%m-%d 08:00:00'), 10000.00, 'Cash', NULL,            'Pending',   'Church: St. Peter and Paul Parish', 1),
     (CONCAT('BK-', @y, '-0008'), 'Paolo Aquino',      '09891234567', NULL,                        1,
-        DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 5 DAY), '%Y-%m-%d 14:00:00'),    0.00, NULL,    NULL,            'Cancelled', 'Customer rescheduled to next month', 1);
+        DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 5 DAY), '%Y-%m-%d 14:00:00'),    0.00, NULL,    NULL,            'Cancelled', NULL, 1);
+UPDATE bookings SET closed_reason = 'Customer rescheduled to next month', closed_by = 1, closed_at = DATE_SUB(NOW(), INTERVAL 6 DAY)
+    WHERE booking_no = CONCAT('BK-', @y, '-0008');
 
 -- Continue numbering after the sample bookings.
 INSERT INTO doc_sequences (doc_type, seq_year, last_no) VALUES ('BK', @y, 8);
@@ -93,6 +95,7 @@ INSERT INTO settings (setting_key, setting_value) VALUES
     ('business_name',   'LENSYNC Photo Studio'),
     ('address',         'Centro, Aparri, Cagayan'),
     ('contact',         '0917 000 0000'),
+    ('tax_rate',        '6.00'),
     ('logo_path',       ''),
     ('signature_path',  ''),
     ('smtp_host',       'smtp.gmail.com'),

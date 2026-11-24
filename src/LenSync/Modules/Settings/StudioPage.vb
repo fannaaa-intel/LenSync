@@ -10,13 +10,18 @@ Imports LenSync.UI.Dialogs
 
 Namespace Modules.Settings
 
-    ''' <summary>Settings > Studio: business name, address, contact, logo and owner signature (used on receipts and reports).</summary>
+    ''' <summary>
+    ''' Settings > Studio: business name, address, contact, tax rate (added to every bill), logo and owner signature
+    ''' (used on receipts and reports).
+    ''' </summary>
     Public Class StudioPage
         Inherits ModulePage
 
         Private ReadOnly _lblName As Label
         Private ReadOnly _lblAddress As Label
         Private ReadOnly _lblContact As Label
+        Private ReadOnly _lblTax As Label
+        Private ReadOnly _txtTax As New LsTextBox()
         Private ReadOnly _lblLogo As Label
         Private ReadOnly _lblSignature As Label
         Private ReadOnly _txtName As New LsTextBox()
@@ -45,6 +50,7 @@ Namespace Modules.Settings
             _lblName = AddFieldLabel("Business name")
             _lblAddress = AddFieldLabel("Address")
             _lblContact = AddFieldLabel("Contact number")
+            _lblTax = AddFieldLabel("Tax rate (%)")
             _lblLogo = AddFieldLabel("Logo")
             _lblSignature = AddFieldLabel("Owner's signature")
             _txtName.FieldName = "Business name"
@@ -56,18 +62,22 @@ Namespace Modules.Settings
             _txtContact.Filter = InputFilter.Phone
             _txtContact.MaxLength = 40
             _txtContact.Placeholder = "e.g. 0917 123 4567"
-            _hint.Text = "Logo: PNG or JPG up to 5 MB. Signature: click Draw and sign with the mouse, touchpad or a pen; " &
-                         "it appears on printed reports."
+            _txtTax.FieldName = "Tax rate in percent"
+            _txtTax.Filter = InputFilter.Money
+            _txtTax.MaxLength = 6
+            _txtTax.Placeholder = "0 = no tax"
+            _hint.Text = "Tax rate: added on top of every bill after discounts (e.g. 6 = 6%). Logo: PNG or JPG up to 5 MB. " &
+                         "Signature: click Draw and sign with the mouse, touchpad or a pen; it appears on printed reports."
             _hint.Font = Theme.Hint
             _hint.ForeColor = Theme.Slate
             _hint.BackColor = Theme.White
             For Each b In {_btnLogo, _btnLogoRemove, _btnSigDraw, _btnSigRemove}
                 b.FitToText(96)
             Next
-            Controls.AddRange({_txtName, _txtAddress, _txtContact, _logo, _signature, _btnLogo, _btnLogoRemove,
+            Controls.AddRange({_txtName, _txtAddress, _txtContact, _txtTax, _logo, _signature, _btnLogo, _btnLogoRemove,
                                _btnSigDraw, _btnSigRemove, _hint})
 
-            For Each t In {_txtName, _txtAddress, _txtContact}
+            For Each t In {_txtName, _txtAddress, _txtContact, _txtTax}
                 AddHandler t.TextChanged, Sub() UpdateButtons()
             Next
             AddHandler _btnLogo.Click, Sub() ChooseLogo()
@@ -91,6 +101,7 @@ Namespace Modules.Settings
             _txtName.Text = _saved.BusinessName
             _txtAddress.Text = _saved.Address
             _txtContact.Text = _saved.Contact
+            _txtTax.Text = _saved.TaxRateText
             _logo.Picture = TryLoad(_saved.LogoPath)
             _signature.Picture = TryLoad(_saved.SignaturePath)
             _logoSource = Nothing
@@ -114,7 +125,7 @@ Namespace Modules.Settings
         Public Overrides ReadOnly Property HasUnsavedChanges As Boolean
             Get
                 Return _txtName.Text <> _saved.BusinessName OrElse _txtAddress.Text <> _saved.Address OrElse
-                       _txtContact.Text <> _saved.Contact OrElse _logoSource IsNot Nothing OrElse _signatureSource IsNot Nothing
+                       _txtContact.Text <> _saved.Contact OrElse _txtTax.Text <> _saved.TaxRateText OrElse _logoSource IsNot Nothing OrElse _signatureSource IsNot Nothing
             End Get
         End Property
 
@@ -211,7 +222,8 @@ Namespace Modules.Settings
 
         Private Async Sub SaveAsync()
             Validator.ClearAll(Me)
-            Dim info As New StudioInfo With {.BusinessName = _txtName.Text, .Address = _txtAddress.Text, .Contact = _txtContact.Text}
+            Dim info As New StudioInfo With {.BusinessName = _txtName.Text, .Address = _txtAddress.Text, .Contact = _txtContact.Text,
+                                             .TaxRateText = _txtTax.Text}
             Dim logo = _logoSource
             Dim sig = _signatureSource
             _btnSave.Enabled = False
@@ -221,7 +233,8 @@ Namespace Modules.Settings
                 Return
             End If
             Dim fields As New Dictionary(Of String, Control) From {
-                {"name", _txtName}, {"address", _txtAddress}, {"contact", _txtContact}, {"logo", _logo}, {"signature", _signature}}
+                {"name", _txtName}, {"address", _txtAddress}, {"contact", _txtContact}, {"taxRate", _txtTax},
+                {"logo", _logo}, {"signature", _signature}}
             If FormErrors.Show(result, fields) Then
                 UpdateButtons()
                 Return
@@ -243,6 +256,14 @@ Namespace Modules.Settings
                 pair.Item2.Bounds = New Rectangle(area.Left, y + labelH + Theme.Dpi(4), leftW, fieldH)
                 y += block
             Next
+            ' Contact number and tax rate share the last row (a rate needs little width).
+            Dim taxW = Math.Max(Theme.Dpi(110), leftW * 36 \ 100)
+            Dim contactW = leftW - taxW - Theme.Dpi(12)
+            _lblContact.Width = contactW
+            _txtContact.Width = contactW
+            Dim taxX = area.Left + contactW + Theme.Dpi(12)
+            _lblTax.Bounds = New Rectangle(taxX, _lblContact.Top, taxW, labelH)
+            _txtTax.Bounds = New Rectangle(taxX, _txtContact.Top, taxW, fieldH)
 
             ' Pictures: two slots side by side in the right column.
             Dim x = area.Left + leftW + colGap
@@ -261,7 +282,7 @@ Namespace Modules.Settings
                 set1.Item4.Bounds = New Rectangle(set1.Item3.Right + Theme.Dpi(4), set1.Item3.Top, slotW - chooseW - Theme.Dpi(4), set1.Item4.Height)
                 col += 1
             Next
-            _hint.Bounds = New Rectangle(x, _btnLogo.Bottom + Theme.Dpi(12), rightW, Theme.Hint.Height * 2 + Theme.Dpi(4))
+            _hint.Bounds = New Rectangle(x, _btnLogo.Bottom + Theme.Dpi(12), rightW, Theme.Hint.Height * 3 + Theme.Dpi(4))
         End Sub
 
     End Class

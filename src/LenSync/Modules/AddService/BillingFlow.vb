@@ -18,9 +18,9 @@ Namespace Modules.AddService
         Private Sub New()
         End Sub
 
-        ''' <summary>Returns True if a payment was saved.</summary>
+        ''' <summary>Returns True if a payment was saved (False if cancelled or the bill was voided).</summary>
         Public Shared Async Function RunAsync(owner As Control, bookingId As Integer) As Task(Of Boolean)
-            Dim start As Tuple(Of Booking, List(Of PriceItem))
+            Dim start As BillStart
             owner.UseWaitCursor = True
             Try
                 start = Await Task.Run(Function() Billing.StartBill(bookingId))
@@ -31,7 +31,7 @@ Namespace Modules.AddService
             Finally
                 owner.UseWaitCursor = False
             End Try
-            Dim booking = start.Item1
+            Dim booking = start.Booking
             If booking Is Nothing Then
                 LsDialog.Warning("This booking no longer exists. The list will refresh.", "Can't bill")
                 Return False
@@ -42,8 +42,14 @@ Namespace Modules.AddService
             End If
 
             Dim outcome As SaleOutcome
-            Using dlg As New BillingDialog(booking, start.Item2)
-                If dlg.ShowCard() <> DialogResult.OK Then Return False
+            Using dlg As New BillingDialog(start)
+                If dlg.ShowCard() <> DialogResult.OK Then
+                    If dlg.WasVoided Then
+                        AppEvents.RaiseSalesChanged()
+                        Toast.Show($"The bill for {booking.BookingNo} was voided. No receipt was issued.", ToastKind.Success)
+                    End If
+                    Return False
+                End If
                 outcome = dlg.Outcome
             End Using
             AppEvents.RaiseSalesChanged()

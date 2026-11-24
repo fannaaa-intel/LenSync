@@ -8,8 +8,8 @@ Imports LenSync.Models
 Namespace UI.Controls
 
     ''' <summary>
-    ''' The running totals of a bill on a snow card framed by viewfinder brackets: subtotal, discount, total, less
-    ''' downpayment, and the balance due in large type.
+    ''' The running totals of a bill on a snow card framed by viewfinder brackets: subtotal, discount, tax (when the
+    ''' studio charges one), total, less downpayment, and the balance due in large type.
     ''' </summary>
     Public Class BillSummary
         Inherits Control
@@ -58,7 +58,10 @@ Namespace UI.Controls
                                       TextFormatFlags.NoPrefix Or TextFormatFlags.EndEllipsis Or TextFormatFlags.SingleLine Or TextFormatFlags.NoPadding)
                 y += Theme.Hint.Height
             End If
-            y = Row(g, "Total", Money.Format(_totals.Total), pad, w, y, True)
+            If _totals.TaxRate > 0D Then
+                y = Row(g, $"Tax ({Billing.FormatRate(_totals.TaxRate)})", "+" & Money.Format(_totals.TaxAmount), pad, w, y, False)
+            End If
+            y = Row(g, "Total",Money.Format(_totals.Total), pad, w, y, True)
             y = Row(g, "Less downpayment", If(_totals.Downpayment > 0D, "−" & Money.Format(_totals.Downpayment), "None"), pad, w, y, False)
             y += Theme.Dpi(4)
             Using p As New Pen(Theme.Mist)

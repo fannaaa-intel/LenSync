@@ -4,6 +4,7 @@ Option Infer On
 
 Imports System.Drawing.Drawing2D
 Imports System.Drawing.Imaging
+Imports System.Globalization
 Imports System.IO
 Imports System.Text.RegularExpressions
 Imports LenSync.Models
@@ -16,6 +17,8 @@ Namespace Core
         Public Property Contact As String = ""
         Public Property LogoPath As String = ""
         Public Property SignaturePath As String = ""
+        ''' <summary>Tax rate in percent as typed ("6", "12.5"); "" or "0" = no tax.</summary>
+        Public Property TaxRateText As String = "0"
     End Class
 
     Public Class EmailSettings
@@ -56,7 +59,25 @@ Namespace Core
                 .Address = AppSettings.GetValue(AppSettings.Address),
                 .Contact = AppSettings.GetValue(AppSettings.Contact),
                 .LogoPath = AppSettings.GetValue(AppSettings.LogoPath),
-                .SignaturePath = AppSettings.GetValue(AppSettings.SignaturePath)}
+                .SignaturePath = AppSettings.GetValue(AppSettings.SignaturePath),
+                .TaxRateText = FormatTaxRate(Billing.CurrentTaxRate())}
+        End Function
+
+        Public Shared Function FormatTaxRate(rate As Decimal) As String
+            Return rate.ToString("0.##", CultureInfo.InvariantCulture)
+        End Function
+
+        ''' <summary>Parses the tax rate field: 0 to 100 percent, at most 2 decimals. Returns the problem or Nothing.</summary>
+        Public Shared Function TaxRateProblem(text As String, ByRef rate As Decimal) As String
+            text = If(text, "").Trim().TrimEnd("%"c).Trim()
+            rate = 0D
+            If text.Length = 0 Then Return Nothing
+            If Not Decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, rate) Then
+                Return "Enter the tax rate as a number, e.g. 6 or 12.5 (0 = no tax)."
+            End If
+            If rate < 0D OrElse rate > Billing.MaxTaxRate Then Return "Use a rate from 0 to 100%."
+            If Decimal.Round(rate, 2) <> rate Then Return "Use at most 2 decimal places."
+            Return Nothing
         End Function
 
         ''' <summary>
@@ -73,6 +94,9 @@ Namespace Core
             If name.Length > 120 Then result.AddError("name", "Use at most 120 characters.")
             If address.Length > 255 Then result.AddError("address", "Use at most 255 characters.")
             If Not ContactPattern.IsMatch(contact) Then result.AddError("contact", "Use numbers, spaces, +, - or ( ) only.")
+            Dim taxRate As Decimal
+            Dim taxProblem = TaxRateProblem(info.TaxRateText, taxRate)
+            If taxProblem IsNot Nothing Then result.AddError("taxRate", taxProblem)
             Dim problem As String = Nothing
             If Not String.IsNullOrEmpty(logoSource) AndAlso Not ImageProblem(logoSource, problem) Then result.AddError("logo", problem)
             If Not String.IsNullOrEmpty(signatureSource) AndAlso Not ImageProblem(signatureSource, problem) Then result.AddError("signature", problem)
@@ -87,8 +111,11 @@ Namespace Core
             AppSettings.SetValue(AppSettings.Contact, contact)
             AppSettings.SetValue(AppSettings.LogoPath, newLogo)
             AppSettings.SetValue(AppSettings.SignaturePath, newSignature)
+            Dim oldRate = Billing.CurrentTaxRate()
+            AppSettings.SetValue(AppSettings.TaxRate, taxRate.ToString("0.00", CultureInfo.InvariantCulture))
 
             Dim changes As New List(Of String)
+            If oldRate <> taxRate Then changes.Add($"tax rate {Billing.FormatRate(oldRate)} -> {Billing.FormatRate(taxRate)}")
             If before.BusinessName <> name Then changes.Add($"name '{before.BusinessName}' -> '{name}'")
             If before.Address <> address Then changes.Add("address changed")
             If before.Contact <> contact Then changes.Add("contact changed")

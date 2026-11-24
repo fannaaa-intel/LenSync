@@ -13,20 +13,23 @@ Imports LenSync.UI.Dialogs
 Namespace Modules
 
     ''' <summary>
-    ''' Dashboard: four headline tiles (sales today, receipts today, shoots today, to bill), the last 7 days of sales,
-    ''' recent receipts and today's schedule. Refreshes after any sale/booking change (AppEvents.SalesChanged) and every
-    ''' minute. Users with Add Service can click through to the related tab or receipt; others see it read-only.
+    ''' Dashboard: three headline tiles (today's revenue, shoots today, awaiting payment), the sales chart with a
+    ''' Daily / Weekly / Monthly filter, recent receipts and today's schedule. Refreshes after any sale/booking change
+    ''' (AppEvents.SalesChanged) and every minute. Users with Add Service can click through to the related tab or
+    ''' receipt; others see it read-only.
     ''' </summary>
     Public Class DashboardView
         Inherits UserControl
 
         Private Shared ReadOnly PH As CultureInfo = CultureInfo.GetCultureInfo("en-PH")
+        Private Shared ReadOnly Periods As SalesPeriod() = {SalesPeriod.Daily, SalesPeriod.Weekly, SalesPeriod.Monthly}
 
-        Private ReadOnly _tileSales As New StatTile() With {.Text = "Sales today", .IsMoney = True}
-        Private ReadOnly _tileReceipts As New StatTile() With {.Text = "Receipts today"}
+        ' "Revenue": the total of the receipts issued today (downpayment included), voided ones never counted.
+        Private ReadOnly _tileSales As New StatTile() With {.Text = "Today's revenue", .IsMoney = True}
         Private ReadOnly _tileShoots As New StatTile() With {.Text = "Shoots today"}
-        Private ReadOnly _tileToBill As New StatTile() With {.Text = "To bill"}
-        Private ReadOnly _chart As New WeekChart()
+        Private ReadOnly _tileAwaiting As New StatTile() With {.Text = "Awaiting payment"}
+        Private ReadOnly _chart As New SalesChart()
+        Private ReadOnly _period As New LsSelect()
         Private ReadOnly _recent As New LsGrid()
         Private ReadOnly _schedule As New LsGrid()
         Private ReadOnly _timer As New Timer() With {.Interval = 60000}
@@ -46,7 +49,7 @@ Namespace Modules
             DoubleBuffered = True
             SetStyle(ControlStyles.ResizeRedraw, True)
 
-            Dim tabs = {Tuple.Create(_tileSales, 2), Tuple.Create(_tileReceipts, 2), Tuple.Create(_tileShoots, 0), Tuple.Create(_tileToBill, 1)}
+            Dim tabs = {Tuple.Create(_tileSales, 2), Tuple.Create(_tileShoots, 0), Tuple.Create(_tileAwaiting, 1)}
             For Each t In tabs
                 Dim tab = t.Item2
                 t.Item1.Clickable = _canOpen
@@ -76,9 +79,13 @@ Namespace Modules
             _schedule.EmptyText = "No shoots scheduled today."
             _schedule.AccessibleName = "Today's schedule"
 
-            _chart.AccessibleName = "Sales for the last 7 days"
+            _chart.AccessibleName = "Sales chart"
             _chart.Clickable = _canOpen
-            Controls.AddRange({_chart, _recent, _schedule})
+            _period.FieldName = "Show sales by"
+            _period.SetItems({"Daily", "Weekly", "Monthly"})
+            _period.SelectedIndex = 0
+            _period.BackColor = Theme.White   ' it sits on the white chart card, not the snow page
+            Controls.AddRange({_period, _chart, _recent, _schedule})
 
             AddHandler _recent.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then ViewSelectedReceipt()
             AddHandler _recent.KeyDown, Sub(s, e)
@@ -88,7 +95,11 @@ Namespace Modules
                                             End If
                                         End Sub
             AddHandler _schedule.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenAddService(0)
-            AddHandler _chart.DayClicked, Sub() OpenAddService(2)
+            AddHandler _chart.BarClicked, Sub() OpenAddService(2)
+            AddHandler _period.SelectedIndexChanged, Sub()
+                                                         Invalidate()
+                                                         RefreshNow()
+                                                     End Sub
             AddHandler _timer.Tick, Sub() RefreshNow()
             AddHandler AppEvents.SalesChanged, AddressOf OnSalesChanged
         End Sub
@@ -112,7 +123,8 @@ Namespace Modules
             End If
             _refreshing = True
             Try
-                Dim snap = Await Task.Run(Function() DashboardService.Load())
+                Dim period = SelectedPeriod
+                Dim snap = Await Task.Run(Function() DashboardService.Load(period))
                 If IsDisposed Then Return
                 Apply(snap)
                 _status = $"Updated {snap.LoadedAt.ToString("h:mm tt", PH)}  ·  refreshes every minute"
@@ -136,19 +148,23 @@ Namespace Modules
             End If
         End Sub
 
+        Private ReadOnly Property SelectedPeriod As SalesPeriod
+            Get
+                Return Periods(Math.Max(0, _period.SelectedIndex))
+            End Get
+        End Property
+
         Private Sub Apply(snap As DashboardSnapshot)
             _snap = snap
             _tileSales.SetValue(snap.Today.Total)
             _tileSales.Note = "Yesterday " & Money.Format(snap.Yesterday.Total)
-            _tileReceipts.SetValue(snap.Today.Receipts)
-            _tileReceipts.Note = If(snap.VoidedToday > 0, $"{snap.VoidedToday} voided, not counted", "Completed receipts")
             _tileShoots.SetValue(snap.Schedule.Count)
             _tileShoots.Note = If(snap.Schedule.Count = 0, "Nothing scheduled",
                                   If(snap.ShootsPending > 0, $"{snap.ShootsPending} still to shoot", "All shoots done"))
-            _tileToBill.SetValue(snap.ToBill)
-            _tileToBill.Note = If(snap.ToBill = 0, "Every finished shoot is paid", "Finished shoots awaiting payment")
+            _tileAwaiting.SetValue(snap.AwaitingPayment)
+            _tileAwaiting.Note = If(snap.AwaitingPayment = 0, "Every finished shoot is paid", "Finished shoots not yet paid")
 
-            _chart.SetDays(snap.Week, snap.LoadedAt.Date)
+            _chart.SetBuckets(snap.Buckets, snap.Period, snap.LoadedAt.Date)
 
             _recent.Rows.Clear()
             For Each s In snap.Recent
@@ -215,9 +231,9 @@ Namespace Modules
             Dim gap = Theme.Dpi(16)
             Dim top = Theme.Dpi(30)
             Dim tileH = Theme.Dpi(112)
-            Dim tileW = Math.Max(0, (Width - m * 2 - gap * 3) \ 4)
+            Dim tileW = Math.Max(0, (Width - m * 2 - gap * 2) \ 3)
             Dim x = m
-            For Each t In {_tileSales, _tileReceipts, _tileShoots, _tileToBill}
+            For Each t In {_tileSales, _tileShoots, _tileAwaiting}
                 t.Bounds = New Rectangle(x, top, tileW, tileH)
                 x += tileW + gap
             Next
@@ -229,6 +245,10 @@ Namespace Modules
             _recentCard = New Rectangle(m, cardsTop + chartH + gap, leftW, availH - chartH - gap)
             _scheduleCard = New Rectangle(m + leftW + gap, cardsTop, Width - m * 2 - leftW - gap, availH)
             _chart.Bounds = ContentOf(_chartCard)
+            ' The period filter sits in the chart card's header, at the right.
+            Dim selW = Theme.Dpi(140)
+            Dim selH = Theme.Dpi(36)
+            _period.Bounds = New Rectangle(_chartCard.Right - Theme.Dpi(12) - selW, _chartCard.Y + (CardHeader - selH) \ 2, selW, selH)
             _recent.Bounds = ContentOf(_recentCard)
             _schedule.Bounds = ContentOf(_scheduleCard)
             Invalidate()
@@ -241,13 +261,16 @@ Namespace Modules
             Dim m = Theme.Dpi(32)
             TextRenderer.DrawText(g, _status, Theme.Hint, New Rectangle(m, Theme.Dpi(6), Width - m * 2, Theme.Dpi(20)), Theme.Slate,
                                   TextFormatFlags.Right Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine)
-            Dim weekTotal = If(_snap Is Nothing, 0D, _snap.Week.Sum(Function(d) d.Total))
-            DrawCard(g, _chartCard, "Sales, last 7 days", If(_snap Is Nothing, "", Money.Format(weekTotal) & " in 7 days"))
+            Dim span = If(_snap Is Nothing, "", If(_snap.Period = SalesPeriod.Weekly, "8 weeks", If(_snap.Period = SalesPeriod.Monthly, "6 months", "7 days")))
+            Dim chartTotal = If(_snap Is Nothing, 0D, _snap.Buckets.Sum(Function(b) b.Total))
+            Dim chartTitle = If(SelectedPeriod = SalesPeriod.Weekly, "Weekly sales", If(SelectedPeriod = SalesPeriod.Monthly, "Monthly sales", "Daily sales"))
+            DrawCard(g, _chartCard, chartTitle, If(_snap Is Nothing, "", $"{Money.Format(chartTotal)} in {span}"), _period.Width + Theme.Dpi(12))
             DrawCard(g, _recentCard, "Recent transactions", If(_canOpen, "Double-click to view", ""))
             DrawCard(g, _scheduleCard, "Today's schedule", DateTime.Today.ToString("ddd, MMM d", PH))
         End Sub
 
-        Private Sub DrawCard(g As Graphics, r As Rectangle, title As String, hint As String)
+        ''' <summary><paramref name="reserveRight"/>: header width kept free at the right (for a control placed there).</summary>
+        Private Sub DrawCard(g As Graphics, r As Rectangle, title As String, hint As String, Optional reserveRight As Integer = 0)
             If r.Width <= 0 OrElse r.Height <= 0 Then Return
             Using path = Gfx.RoundedRect(New RectangleF(r.X + 0.5F, r.Y + 0.5F, r.Width - 1.0F, r.Height - 1.0F), Theme.Dpi(CSng(Theme.Radius)))
                 Using b As New SolidBrush(Theme.White)
@@ -258,7 +281,7 @@ Namespace Modules
                 End Using
             End Using
             Dim pad = Theme.Dpi(18)
-            Dim headerRect As New Rectangle(r.X + pad, r.Y + Theme.Dpi(4), r.Width - pad * 2, CardHeader - Theme.Dpi(8))
+            Dim headerRect As New Rectangle(r.X + pad, r.Y + Theme.Dpi(4), Math.Max(0, r.Width - pad * 2 - reserveRight), CardHeader - Theme.Dpi(8))
             Const flags As TextFormatFlags = TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPrefix Or TextFormatFlags.SingleLine Or TextFormatFlags.EndEllipsis
             Dim hintW = If(hint.Length = 0, 0, TextRenderer.MeasureText(g, hint, Theme.Label).Width)
             TextRenderer.DrawText(g, title, Theme.BodyBold, New Rectangle(headerRect.X, headerRect.Y, headerRect.Width - hintW - Theme.Dpi(8), headerRect.Height), Theme.Ink, flags)

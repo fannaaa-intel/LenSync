@@ -9,7 +9,10 @@ Imports LenSync.Models
 
 Namespace Data
 
-    ''' <summary>SQL for sales (transactions + transaction_items). Sales are voided, never deleted.</summary>
+    ''' <summary>
+    ''' SQL for sales (transactions + transaction_items). Completed receipts are final and never deleted; status
+    ''' 'Voided' only exists on receipts voided before voiding moved to Billing (2026-11-24).
+    ''' </summary>
     Public NotInheritable Class TransactionRepository
 
         Private Sub New()
@@ -20,14 +23,15 @@ Namespace Data
                                       tendered As Decimal, change As Decimal, cashierId As Integer) As Integer
             Const sql As String =
                 "INSERT INTO transactions (receipt_no, booking_id, subtotal, discount_type, discount_value, discount_amount, discount_reason, " &
-                "total, downpayment, balance_due, payment_method, reference_no, amount_tendered, change_amount, status, cashier_id) " &
-                "VALUES (@no, @booking, @sub, @dtype, @dvalue, @damount, @dreason, @total, @dp, @balance, @method, @ref, @tendered, " &
+                "tax_rate, tax_amount, total, downpayment, balance_due, payment_method, reference_no, amount_tendered, change_amount, status, cashier_id) " &
+                "VALUES (@no, @booking, @sub, @dtype, @dvalue, @damount, @dreason, @taxrate, @tax, @total, @dp, @balance, @method, @ref, @tendered, " &
                 "@change, 'Completed', @cashier); SELECT LAST_INSERT_ID();"
             Dim hasDiscount = discount IsNot Nothing AndAlso totals.DiscountAmount > 0D
             Using cmd = Db.Command(conn, sql, tx,
                     Db.P("@no", receiptNo), Db.P("@booking", bookingId), Db.P("@sub", totals.Subtotal),
                     Db.P("@dtype", If(hasDiscount, discount.Kind, Nothing)), Db.P("@dvalue", If(hasDiscount, discount.Value, 0D)),
                     Db.P("@damount", totals.DiscountAmount), Db.P("@dreason", If(hasDiscount, discount.Reason, Nothing)),
+                    Db.P("@taxrate", totals.TaxRate), Db.P("@tax", totals.TaxAmount),
                     Db.P("@total", totals.Total), Db.P("@dp", totals.Downpayment), Db.P("@balance", totals.BalanceDue),
                     Db.P("@method", method), Db.P("@ref", If(String.IsNullOrEmpty(referenceNo), Nothing, referenceNo)),
                     Db.P("@tendered", tendered), Db.P("@change", change), Db.P("@cashier", cashierId))
@@ -87,7 +91,9 @@ Namespace Data
                     .ScheduleAt = Convert.ToDateTime(head("schedule_at")),
                     .Subtotal = Convert.ToDecimal(head("subtotal")), .DiscountType = If(Db.Str(head, "discount_type"), ""),
                     .DiscountValue = Convert.ToDecimal(head("discount_value")), .DiscountAmount = Convert.ToDecimal(head("discount_amount")),
-                    .DiscountReason = If(Db.Str(head, "discount_reason"), ""), .Total = Convert.ToDecimal(head("total")),
+                    .DiscountReason = If(Db.Str(head, "discount_reason"), ""),
+                    .TaxRate = Convert.ToDecimal(head("tax_rate")), .TaxAmount = Convert.ToDecimal(head("tax_amount")),
+                    .Total = Convert.ToDecimal(head("total")),
                     .Downpayment = Convert.ToDecimal(head("downpayment")), .DownpaymentMethod = Db.Str(head, "dp_method"),
                     .DownpaymentRef = Db.Str(head, "dp_ref"), .BalanceDue = Convert.ToDecimal(head("balance_due")),
                     .PaymentMethod = Db.Str(head, "payment_method"), .ReferenceNo = If(Db.Str(head, "reference_no"), ""),
@@ -118,13 +124,6 @@ Namespace Data
                 End Using
             End Using
         End Function
-
-        Public Shared Sub SetVoided(conn As MySqlConnection, tx As MySqlTransaction, id As Integer, reason As String, userId As Integer)
-            Using cmd = Db.Command(conn, "UPDATE transactions SET status = 'Voided', void_reason = @reason, voided_by = @by, voided_at = NOW() WHERE id = @id",
-                                   tx, Db.P("@reason", reason), Db.P("@by", userId), Db.P("@id", id))
-                cmd.ExecuteNonQuery()
-            End Using
-        End Sub
 
         ''' <summary>Adds one to printed_count and returns the new count.</summary>
         Public Shared Function IncrementPrinted(conn As MySqlConnection, tx As MySqlTransaction, id As Integer) As Integer

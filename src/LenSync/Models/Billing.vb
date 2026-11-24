@@ -4,7 +4,10 @@ Option Infer On
 
 Namespace Models
 
-    ''' <summary>bookings.status values. Flow: Pending -> Unpaid (shoot done) -> Paid, or Pending/Unpaid -> Cancelled.</summary>
+    ''' <summary>
+    ''' bookings.status values. Flow: Pending -> Unpaid (shoot done) -> Paid; Pending/Unpaid -> Cancelled (booking called
+    ''' off); Unpaid -> Voided (the bill was voided in Billing before payment). Cancelled and Voided need a reason.
+    ''' </summary>
     Public NotInheritable Class BookingStatus
         Private Sub New()
         End Sub
@@ -12,6 +15,7 @@ Namespace Models
         Public Const Unpaid As String = "Unpaid"
         Public Const Paid As String = "Paid"
         Public Const Cancelled As String = "Cancelled"
+        Public Const Voided As String = "Voided"
     End Class
 
     ''' <summary>Cash, GCash, Maya. E-wallets need a reference number (no API integration).</summary>
@@ -50,6 +54,7 @@ Namespace Models
         Open
         Paid
         Cancelled
+        Voided
         All
     End Enum
 
@@ -69,6 +74,9 @@ Namespace Models
         Public Property DownpaymentRef As String = ""
         Public Property Status As String = BookingStatus.Pending
         Public Property Notes As String = ""
+        ''' <summary>Why a Cancelled/Voided booking was closed ("" otherwise).</summary>
+        Public Property ClosedReason As String = ""
+        Public Property ClosedAt As DateTime?
 
         Public ReadOnly Property IsEditable As Boolean
             Get
@@ -107,6 +115,10 @@ Namespace Models
     Public Class BillTotals
         Public Property Subtotal As Decimal
         Public Property DiscountAmount As Decimal
+        ''' <summary>Percent (e.g. 6 = 6%), from Settings > Studio at the time of billing.</summary>
+        Public Property TaxRate As Decimal
+        Public Property TaxAmount As Decimal
+        ''' <summary>Subtotal - discount + tax.</summary>
         Public Property Total As Decimal
         Public Property Downpayment As Decimal
         Public Property BalanceDue As Decimal
@@ -129,6 +141,13 @@ Namespace Models
         Public Property TransactionId As Integer
         Public Property ReceiptNo As String = ""
         Public Property ChangeAmount As Decimal
+    End Class
+
+    ''' <summary>What the bill opens with: the booking (still Unpaid), the add-ons to choose from and the tax rate.</summary>
+    Public Class BillStart
+        Public Property Booking As Booking
+        Public Property Addons As New List(Of PriceItem)
+        Public Property TaxRate As Decimal
     End Class
 
     Public Enum SalesRange
@@ -167,6 +186,8 @@ Namespace Models
         Public Property DiscountValue As Decimal
         Public Property DiscountAmount As Decimal
         Public Property DiscountReason As String = ""
+        Public Property TaxRate As Decimal
+        Public Property TaxAmount As Decimal
         Public Property Total As Decimal
         Public Property Downpayment As Decimal
         Public Property DownpaymentMethod As String = ""

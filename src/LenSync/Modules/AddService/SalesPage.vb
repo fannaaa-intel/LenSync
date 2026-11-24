@@ -12,8 +12,8 @@ Imports LenSync.UI.Dialogs
 Namespace Modules.AddService
 
     ''' <summary>
-    ''' Add Service > Sales: completed and voided receipts. View/reprint a receipt; void a sale (VOID_SALE only, the
-    ''' button is hidden for other roles and the permission is checked again when voiding).
+    ''' Add Service > Sales: issued receipts. View/reprint a receipt. Paid receipts are final: voiding is done in
+    ''' Billing, before the payment is recorded (older receipts voided before that change still show as Voided).
     ''' </summary>
     Public Class SalesPage
         Inherits ModulePage
@@ -24,7 +24,6 @@ Namespace Modules.AddService
         Private ReadOnly _range As New LsChoice()
         Private ReadOnly _grid As New LsGrid()
         Private ReadOnly _btnView As New LsButton("View receipt", ButtonVariant.Secondary)
-        Private ReadOnly _btnVoid As New LsButton("Void sale", ButtonVariant.Secondary)
         Private ReadOnly _lblTotal As New Label()
         Private _sales As New List(Of SaleSummary)
 
@@ -36,7 +35,6 @@ Namespace Modules.AddService
             _range.SetItems({"Today", "7 days", "30 days", "All"})
             _range.AccessibleName = "Show sales from"
             _range.Width = Theme.Dpi(300)
-            _btnVoid.Visible = Session.HasPermission(Permissions.VoidSale)
             _grid.SolidStatuses.Clear()
             _grid.SolidStatuses.Add("Completed")
             ' Receipt no. must show "AR-2026-000123" in full at a 1080p/150% content width.
@@ -51,7 +49,7 @@ Namespace Modules.AddService
             _lblTotal.ForeColor = Theme.Slate
             _lblTotal.BackColor = Theme.White
             _lblTotal.TextAlign = ContentAlignment.MiddleLeft
-            Controls.AddRange({_search, _range, _btnView, _btnVoid, _grid, _lblTotal})
+            Controls.AddRange({_search, _range, _btnView, _grid, _lblTotal})
 
             AddHandler _search.TextChanged, Sub() Fill()
             AddHandler _range.SelectedIndexChanged, Sub() ReloadQuietly()
@@ -64,7 +62,6 @@ Namespace Modules.AddService
                                           End If
                                       End Sub
             AddHandler _btnView.Click, Sub() ViewSelected()
-            AddHandler _btnVoid.Click, Sub() VoidSelected()
             _range.SelectedIndex = 0
             UpdateButtons()
         End Sub
@@ -116,11 +113,10 @@ Namespace Modules.AddService
         Private Sub UpdateButtons()
             Dim s = Selected
             _btnView.Enabled = s IsNot Nothing
-            _btnVoid.Enabled = s IsNot Nothing AndAlso s.Status = "Completed"
         End Sub
 
         Protected Overrides Sub LayoutContent(area As Rectangle)
-            Dim bottom = LayoutToolbar(area, {_search, _range}, {_btnVoid, _btnView}, 160, 340)
+            Dim bottom = LayoutToolbar(area, {_search, _range}, {_btnView}, 160, 340)
             Dim gridTop = bottom + Theme.Dpi(16)
             Dim footH = Theme.Label.Height + Theme.Dpi(12)
             _grid.Bounds = New Rectangle(area.Left, gridTop, area.Width, Math.Max(0, area.Bottom - gridTop - footH))
@@ -139,22 +135,6 @@ Namespace Modules.AddService
             End Using
             Await ReloadAsync()
             Fill(id)
-        End Sub
-
-        Private Async Sub VoidSelected()
-            Dim s = Selected
-            If s Is Nothing OrElse s.Status <> "Completed" Then Return
-            Dim id = s.Id
-            Using dlg As New ReasonDialog("Void sale", $"Void {s.ReceiptNo}?",
-                                          $"The receipt stays on record marked VOID, and {s.BookingNo} ({s.CustomerName}) goes back to Billing. This can't be undone.",
-                                          "Void sale", "e.g. Wrong package billed",
-                                          Function(reason) Billing.VoidSale(id, reason))
-                If dlg.ShowCard() <> DialogResult.OK Then Return
-            End Using
-            AppEvents.RaiseSalesChanged()
-            Await ReloadAsync()
-            Fill(id)
-            Toast.Show($"{s.ReceiptNo} was voided. {s.BookingNo} is back in Billing.", ToastKind.Success)
         End Sub
 
     End Class

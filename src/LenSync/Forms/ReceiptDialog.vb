@@ -10,13 +10,15 @@ Imports LenSync.UI
 Imports LenSync.UI.Dialogs
 
 ''' <summary>
-''' Shows the acknowledgment receipt exactly as it will print (half letter), right after a payment or when opened
-''' from Sales. "Print receipt" lets the user pick the printer; each printed copy is counted and audited.
+''' Shows the acknowledgment receipt exactly as it will print (5.5" wide, as tall as its content), right after a
+''' payment or when opened from Sales. "Print receipt" lets the user pick the printer; each printed copy is counted
+''' and audited.
 ''' </summary>
 Public Class ReceiptDialog
     Inherits LsFormDialog
 
     Private ReadOnly _receipt As Receipt
+    Private ReadOnly _pageH As Single
     Private _preview As Bitmap
 
     Public Sub New(receipt As Receipt, afterSale As Boolean, changeAmount As Decimal)
@@ -24,8 +26,9 @@ Public Class ReceiptDialog
                    HeadingFor(receipt, afterSale, changeAmount),
                    SubtitleFor(receipt, afterSale),
                    If(receipt.PrintedCount > 0, "Reprint receipt", "Print receipt"), If(afterSale, "Done", "Close"),
-                   PreviewSize().Width, PreviewSize().Height)
+                   PreviewSize(receipt).Width, PreviewSize(receipt).Height)
         _receipt = receipt
+        _pageH = PageHeight(receipt)
         If afterSale Then StrongFrame = True
         AddHandler Body.Paint, AddressOf PaintPreview
     End Sub
@@ -42,18 +45,31 @@ Public Class ReceiptDialog
         Return $"{r.CustomerName}  ·  {Money.Format(r.Total)}  ·  {If(r.IsVoided, "VOIDED", "Completed")}  ·  {printed}"
     End Function
 
-    ''' <summary>Preview size (96-dpi) that fits the screen: as tall as possible, paper-shaped.</summary>
-    Private Shared Function PreviewSize() As Size
+    ''' <summary>The receipt's page height in points (falls back to half letter if it can't be measured).</summary>
+    Private Shared Function PageHeight(r As Receipt) As Single
+        Try
+            Return InvoicePrinter.PageHeightFor(r)
+        Catch ex As Exception
+            AppLog.Write(ex, "Measuring receipt")
+            Return InvoicePrinter.MaxPageHeightPt
+        End Try
+    End Function
+
+    ''' <summary>Preview size (96-dpi) that fits the screen: receipt-shaped, as large as the screen allows.</summary>
+    Private Shared Function PreviewSize(r As Receipt) As Size
         Dim availH = Screen.FromPoint(Cursor.Position).WorkingArea.Height / Theme.DpiScale
-        Dim h = CInt(Math.Max(340, Math.Min(640, availH - 260)))
-        Dim w = CInt(Math.Ceiling(h * InvoicePrinter.PageWidthPt / InvoicePrinter.PageHeightPt))
-        Return New Size(Math.Max(w, 400), h)
+        Dim maxH = Math.Max(300, Math.Min(640, availH - 260))
+        ' Same scale as a full half-letter page would get, so short receipts look short (not blown up).
+        Dim scale = maxH / InvoicePrinter.MaxPageHeightPt
+        Dim h = CInt(Math.Ceiling(PageHeight(r) * scale))
+        Dim w = CInt(Math.Ceiling(InvoicePrinter.PageWidthPt * scale))
+        Return New Size(Math.Max(w, 400), h + 2)
     End Function
 
     Private Sub PaintPreview(sender As Object, e As PaintEventArgs)
         Dim g = e.Graphics
         Dim h = Body.Height - 2
-        Dim w = CInt(h * InvoicePrinter.PageWidthPt / InvoicePrinter.PageHeightPt)
+        Dim w = CInt(h * InvoicePrinter.PageWidthPt / _pageH)
         If _preview Is Nothing OrElse _preview.Width <> w Then
             _preview?.Dispose()
             Try

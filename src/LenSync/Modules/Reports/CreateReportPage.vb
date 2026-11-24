@@ -14,9 +14,10 @@ Imports LenSync.UI.Dialogs
 Namespace Modules.Reports
 
     ''' <summary>
-    ''' Reports > Create report: pick the report and period on the left, see the letter pages exactly as they will print
-    ''' on the right, then "Print report". Every print gets a new report no. and verification code. Right before
-    ''' printing the report is rebuilt; if the sales changed since the preview, the preview updates and nothing prints.
+    ''' Reports > Create report: the filters (report, period, from, to) in one row at the top, the letter pages exactly
+    ''' as they will print filling the space below, and the print bar (summary, page buttons, "Print report") under the
+    ''' preview. Every print gets a new report no. Right before printing the report is rebuilt; if the sales changed
+    ''' since the preview, the preview updates and nothing prints.
     ''' </summary>
     Public Class CreateReportPage
         Inherits ModulePage
@@ -51,7 +52,7 @@ Namespace Modules.Reports
         Private _printing As Boolean
 
         Public Sub New()
-            MyBase.New("Create report", "Choose a report and period, check the preview, then print it with its verification code.")
+            MyBase.New("Create report", "Choose a report and period, check the preview, then print it.")
             _lblType = AddFieldLabel("Report")
             _lblPeriod = AddFieldLabel("Period")
             _lblFrom = AddFieldLabel("From")
@@ -77,17 +78,18 @@ Namespace Modules.Reports
             _summary.ForeColor = Theme.Charcoal
             _summary.BackColor = Theme.White
             _summary.AutoEllipsis = True
+            _summary.TextAlign = ContentAlignment.MiddleLeft
             _pageLabel.Font = Theme.LabelBold
             _pageLabel.ForeColor = Theme.Charcoal
             _pageLabel.BackColor = Theme.White
             _pageLabel.TextAlign = ContentAlignment.MiddleCenter
             _btnPrev.AccessibleName = "Previous page"
             _btnNext.AccessibleName = "Next page"
-            AddAction(_btnPrint)
-            Controls.AddRange({_type, _typeNote, _period, _from, _to, _summary, _preview, _btnPrev, _pageLabel, _btnNext})
+            _btnPrint.FitToText(130)
+            Controls.AddRange({_type, _typeNote, _period, _from, _to, _summary, _preview, _btnPrev, _pageLabel, _btnNext, _btnPrint})
 
-            ' Keyboard order: the choices top to bottom, then the preview and its page buttons, then Print.
-            Dim order As Control() = {_type, _period, _from, _to, _preview, _btnPrev, _btnNext, Actions}
+            ' Keyboard order: the filters left to right, then the preview and its page buttons, then Print.
+            Dim order As Control() = {_type, _period, _from, _to, _preview, _btnPrev, _btnNext, _btnPrint}
             For i = 0 To order.Length - 1
                 order(i).TabIndex = i
             Next
@@ -224,9 +226,9 @@ Namespace Modules.Reports
             Dim problem = ReportService.RangeProblem(fromDay, toDay)
             If problem IsNot Nothing Then
                 _seq += 1
-                ' Shown under From: that field starts at the column edge, so the message has the column's full width.
+                ' Shown under From: To is the last field in the row, so the message has room to run on under it.
                 Validator.SetError(_from, problem)
-                ShowNothing("Fix the dates on the left to see the preview.")
+                ShowNothing("Fix the dates above to see the preview.")
                 Return
             End If
             ClearDateErrors()
@@ -286,9 +288,9 @@ Namespace Modules.Reports
                 Dim rows = _data.RowCount
                 Dim text = $"{count} page{If(count = 1, "", "s")}  ·  {rows:#,##0} row{If(rows = 1, "", "s")}  ·  Net sales {Money.Format(_data.NetSales)}"
                 If _data.IsIssued Then
-                    text &= vbLf & $"Printed as {_data.ReportNo}, code {ReportService.FormatCode(_data.VerificationCode)}. Print again for a new copy with a new number."
+                    text &= vbLf & $"Printed as {_data.ReportNo}. Printing again gives a new no."
                 Else
-                    text &= vbLf & "The report no. and verification code are given when you print."
+                    text &= vbLf & "The report no. is given when you print."
                 End If
                 _summary.Text = text
             End If
@@ -331,7 +333,7 @@ Namespace Modules.Reports
                                    "Printing failed")
                     Return
                 End Try
-                Toast.Show($"{fresh.ReportNo} sent to {printerName}. Verification code {ReportService.FormatCode(fresh.VerificationCode)}.", ToastKind.Success)
+                Toast.Show($"{fresh.ReportNo} sent to {printerName}.", ToastKind.Success)
             Finally
                 _printing = False
                 If Not IsDisposed Then UpdateUi()
@@ -340,53 +342,41 @@ Namespace Modules.Reports
 
         ' ---------------------------------------------------------------- layout
         Protected Overrides Sub LayoutContent(area As Rectangle)
-            ' From/To sit side by side: each must show the widest date in full (text + padding + chevron).
+            ' Row 1: Report | Period | From | To, side by side. Dates must show the widest date in full (text + padding
+            ' + chevron); Period fits "Custom dates" with its icon; Report takes what is left (within limits).
             Dim gap = Theme.Dpi(12)
-            Dim dateW = TextRenderer.MeasureText("May 30, 2026", Theme.Body).Width + Theme.Dpi(12 + 36 + 8)
-            Dim colW = Math.Max(dateW * 2 + gap, Math.Min(Theme.Dpi(300), Math.Max(Theme.Dpi(260), area.Width * 38 \ 100)))
-            Dim x = area.Left
-            Dim y = area.Top
             Dim fieldH = Theme.Dpi(40)
             Dim lblH = Theme.LabelBold.Height + Theme.Dpi(6)
+            Dim dateW = TextRenderer.MeasureText("May 30, 2026", Theme.Body).Width + Theme.Dpi(12 + 36 + 8)
+            Dim periodW = TextRenderer.MeasureText("Custom dates", Theme.Body).Width + Theme.Dpi(12 + 28 + 36 + 8)
+            Dim typeW = Math.Max(Theme.Dpi(200), Math.Min(Theme.Dpi(380), area.Width - periodW - dateW * 2 - gap * 3))
+            Dim x = area.Left
+            Dim y = area.Top
+            For Each pair In {Tuple.Create(_lblType, CType(_type, Control), typeW), Tuple.Create(_lblPeriod, CType(_period, Control), periodW),
+                              Tuple.Create(_lblFrom, CType(_from, Control), dateW), Tuple.Create(_lblTo, CType(_to, Control), dateW)}
+                pair.Item1.Bounds = New Rectangle(x, y, pair.Item3, lblH)
+                pair.Item2.Bounds = New Rectangle(x, y + lblH, pair.Item3, fieldH)
+                x += pair.Item3 + gap
+            Next
+            ' Under Report/Period: one line describing the report. Under From/To: room for the date message.
+            y += lblH + fieldH + Theme.Dpi(4)
+            _typeNote.Bounds = New Rectangle(area.Left, y, Math.Max(0, _from.Left - gap - area.Left), Theme.Label.Height + Theme.Dpi(2))
+            y += Theme.Dpi(26)
 
-            _lblType.Bounds = New Rectangle(x, y, colW, lblH)
-            y += lblH
-            _type.Bounds = New Rectangle(x, y, colW, fieldH)
-            y += fieldH + Theme.Dpi(8)
-            Dim noteH = Math.Min(Theme.Label.Height * 3 + Theme.Dpi(2),
-                                 TextRenderer.MeasureText(If(_typeNote.Text, ""), Theme.Label, New Size(colW, Integer.MaxValue), TextFormatFlags.WordBreak).Height + Theme.Dpi(2))
-            _typeNote.Bounds = New Rectangle(x, y, colW, Math.Max(Theme.Label.Height * 2, noteH))
-            y = _typeNote.Bottom + Theme.Dpi(16)
-
-            _lblPeriod.Bounds = New Rectangle(x, y, colW, lblH)
-            y += lblH
-            _period.Bounds = New Rectangle(x, y, colW, fieldH)
-            y += fieldH + Theme.Dpi(14)
-
-            Dim half = (colW - gap) \ 2
-            _lblFrom.Bounds = New Rectangle(x, y, half, lblH)
-            _lblTo.Bounds = New Rectangle(x + half + gap, y, colW - half - gap, lblH)
-            y += lblH
-            _from.Bounds = New Rectangle(x, y, half, fieldH)
-            _to.Bounds = New Rectangle(x + half + gap, y, colW - half - gap, fieldH)
-            ' Room for the validation message under the dates.
-            y += fieldH + Theme.Dpi(30)
-            ' Whole lines only: on short screens drop lines rather than show half a line.
-            Dim lines = Math.Max(0, Math.Min(4, (area.Bottom - y) \ Theme.Label.Height))
-            _summary.Bounds = New Rectangle(x, y, colW, lines * Theme.Label.Height + If(lines > 0, Theme.Dpi(2), 0))
-            _summary.Visible = lines > 0
-
-            ' Preview on the right with the page buttons under it.
-            Dim px = x + colW + Theme.Dpi(28)
-            Dim pw = Math.Max(0, area.Right - px)
+            ' Bottom: the print bar (summary on the left, page buttons and Print report on the right).
             Dim navH = Theme.Dpi(Theme.ButtonHeight)
-            _preview.Bounds = New Rectangle(px, area.Top, pw, Math.Max(0, area.Height - navH - Theme.Dpi(10)))
-            Dim ny = _preview.Bottom + Theme.Dpi(10)
-            Dim labelW = Theme.Dpi(110)
-            Dim cx = px + pw \ 2
-            _pageLabel.Bounds = New Rectangle(cx - labelW \ 2, ny, labelW, navH)
-            _btnPrev.Location = New Point(_pageLabel.Left - _btnPrev.Width - Theme.Dpi(6), ny)
-            _btnNext.Location = New Point(_pageLabel.Right + Theme.Dpi(6), ny)
+            Dim barH = Math.Max(navH, Theme.Label.Height * 2 + Theme.Dpi(4))
+            Dim barY = area.Bottom - barH
+            Dim ny = barY + (barH - navH) \ 2
+            _btnPrint.Location = New Point(area.Right - _btnPrint.Width, ny)
+            _btnNext.Location = New Point(_btnPrint.Left - Theme.Dpi(20) - _btnNext.Width, ny)
+            Dim labelW = Theme.Dpi(100)
+            _pageLabel.Bounds = New Rectangle(_btnNext.Left - Theme.Dpi(4) - labelW, ny, labelW, navH)
+            _btnPrev.Location = New Point(_pageLabel.Left - Theme.Dpi(4) - _btnPrev.Width, ny)
+            _summary.Bounds = New Rectangle(area.Left, barY, Math.Max(0, _btnPrev.Left - Theme.Dpi(16) - area.Left), barH)
+
+            ' The rest goes to the report preview.
+            _preview.Bounds = New Rectangle(area.Left, y, area.Width, Math.Max(0, barY - Theme.Dpi(10) - y))
         End Sub
 
         Protected Overrides Sub Dispose(disposing As Boolean)

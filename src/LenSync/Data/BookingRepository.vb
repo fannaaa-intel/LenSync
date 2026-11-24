@@ -22,7 +22,8 @@ Namespace Data
             "SELECT b.id, b.booking_no, b.customer_name, IFNULL(b.contact_no, '') AS contact_no, " &
             "IFNULL(b.customer_email, '') AS customer_email, b.package_id, IFNULL(p.name, '') AS package_name, " &
             "IFNULL(p.price, 0) AS package_price, b.schedule_at, b.downpayment, IFNULL(b.downpayment_method, '') AS downpayment_method, " &
-            "IFNULL(b.downpayment_ref, '') AS downpayment_ref, b.status, IFNULL(b.notes, '') AS notes " &
+            "IFNULL(b.downpayment_ref, '') AS downpayment_ref, b.status, IFNULL(b.notes, '') AS notes, " &
+            "IFNULL(b.closed_reason, '') AS closed_reason, b.closed_at " &
             "FROM bookings b LEFT JOIN packages p ON p.id = b.package_id WHERE b.is_active = 1"
 
         ''' <summary>Bookings for the list. Open (to shoot / to bill) comes soonest first; history comes newest first.</summary>
@@ -35,6 +36,7 @@ Namespace Data
                     order = "b.schedule_at ASC, b.id ASC"
                 Case BookingFilter.Paid : where = " AND b.status = 'Paid'"
                 Case BookingFilter.Cancelled : where = " AND b.status = 'Cancelled'"
+                Case BookingFilter.Voided : where = " AND b.status = 'Voided'"
                 Case Else : where = ""
             End Select
             Return Db.Query($"{SelectSql}{where} ORDER BY {order} LIMIT 1000").Rows.Cast(Of DataRow)().Select(AddressOf Map).ToList()
@@ -48,7 +50,7 @@ Namespace Data
 
         ''' <summary>Bookings scheduled on <paramref name="day"/> (cancelled ones left out), earliest first.</summary>
         Public Shared Function ListForDay(day As Date) As List(Of Booking)
-            Return Db.Query($"{SelectSql} AND b.status <> 'Cancelled' AND b.schedule_at >= @from AND b.schedule_at < @to ORDER BY b.schedule_at, b.id",
+            Return Db.Query($"{SelectSql} AND b.status NOT IN ('Cancelled', 'Voided') AND b.schedule_at >= @from AND b.schedule_at < @to ORDER BY b.schedule_at, b.id",
                             Db.P("@from", day.Date), Db.P("@to", day.Date.AddDays(1))).
                 Rows.Cast(Of DataRow)().Select(AddressOf Map).ToList()
         End Function
@@ -81,7 +83,8 @@ Namespace Data
                 .PackageName = Db.Str(r, "package_name"), .PackagePrice = Convert.ToDecimal(r("package_price")),
                 .ScheduleAt = Convert.ToDateTime(r("schedule_at")), .Downpayment = Convert.ToDecimal(r("downpayment")),
                 .DownpaymentMethod = Db.Str(r, "downpayment_method"), .DownpaymentRef = Db.Str(r, "downpayment_ref"),
-                .Status = Db.Str(r, "status"), .Notes = Db.Str(r, "notes")}
+                .Status = Db.Str(r, "status"), .Notes = Db.Str(r, "notes"),
+                .ClosedReason = Db.Str(r, "closed_reason"), .ClosedAt = Db.NullableDate(r, "closed_at")}
         End Function
 
         Public Shared Function Insert(conn As MySqlConnection, tx As MySqlTransaction, b As Booking, bookingNo As String,
@@ -118,6 +121,15 @@ Namespace Data
             Const sql As String =
                 "UPDATE bookings SET status = @status, notes = IF(@note IS NULL, notes, CONCAT_WS('\n', NULLIF(notes, ''), @note)) WHERE id = @id"
             Using cmd = Db.Command(conn, sql, tx, Db.P("@status", status), Db.P("@note", note), Db.P("@id", id))
+                cmd.ExecuteNonQuery()
+            End Using
+        End Sub
+
+        ''' <summary>Closes a booking as Cancelled or Voided, recording why, by whom and when.</summary>
+        Public Shared Sub Close(conn As MySqlConnection, tx As MySqlTransaction, id As Integer, status As String, reason As String, userId As Integer)
+            Const sql As String =
+                "UPDATE bookings SET status = @status, closed_reason = @reason, closed_by = @by, closed_at = NOW() WHERE id = @id"
+            Using cmd = Db.Command(conn, sql, tx, Db.P("@status", status), Db.P("@reason", reason), Db.P("@by", userId), Db.P("@id", id))
                 cmd.ExecuteNonQuery()
             End Using
         End Sub

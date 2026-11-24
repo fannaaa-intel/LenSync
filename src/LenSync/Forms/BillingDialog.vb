@@ -12,8 +12,9 @@ Imports LenSync.UI.Dialogs
 
 ''' <summary>
 ''' Bill a finished shoot: the booked package plus add-ons and "Other" lines on the left; totals, discount and the
-''' payment (Cash / GCash / Maya) on the right. "Complete payment" confirms, then saves everything in one DB
-''' transaction (Billing.CompleteSale). The caller then shows the receipt.
+''' payment (Cash / GCash / Maya) on the right; tax is added automatically at the studio's rate. "Complete payment"
+''' confirms, then saves everything in one DB transaction (Billing.CompleteSale). The caller then shows the receipt.
+''' "Void bill..." (VOID_SALE only) closes the unpaid bill with a reason instead, before any payment is recorded.
 ''' </summary>
 Public Class BillingDialog
     Inherits LsFormDialog
@@ -22,11 +23,13 @@ Public Class BillingDialog
     Private Const RightW As Integer = 330
     Private Const ColGap As Integer = 30
     Private Const BodyW As Integer = LeftW + ColGap + RightW
-    Private Const BodyH As Integer = 412
+    Private Const BodyH As Integer = 438
     Private Const RightX As Integer = LeftW + ColGap
 
     Private ReadOnly _booking As Booking
     Private ReadOnly _addons As List(Of PriceItem)
+    Private ReadOnly _taxRate As Decimal
+    Private ReadOnly _btnVoid As New LsButton("Void bill...", ButtonVariant.Ghost)
     Private ReadOnly _lines As New List(Of BillLine)
     Private _discount As Discount
     Private _dirty As Boolean
@@ -50,12 +53,18 @@ Public Class BillingDialog
     ''' <summary>Set when the payment was saved.</summary>
     Public Property Outcome As SaleOutcome
 
-    Public Sub New(booking As Booking, addons As List(Of PriceItem))
-        MyBase.New("Billing", booking.CustomerName,
-                   $"{booking.BookingNo}  ·  {booking.PackageName}  ·  shoot {BookingAdmin.FormatWhen(booking.ScheduleAt)}",
+    ''' <summary>True when the bill was voided (the dialog closes with Cancel; nothing was paid).</summary>
+    Public Property WasVoided As Boolean
+
+    Public Sub New(start As BillStart)
+        MyBase.New("Billing", start.Booking.CustomerName,
+                   $"{start.Booking.BookingNo}  ·  {start.Booking.PackageName}  ·  shoot {BookingAdmin.FormatWhen(start.Booking.ScheduleAt)}",
                    "Complete payment", "Cancel", BodyW, BodyH)
+        Dim booking = start.Booking
+        Dim addons = start.Addons
         _booking = booking
         _addons = addons
+        _taxRate = start.TaxRate
         _lines.AddRange(Billing.InitialLines(booking))
 
         ' ---------------- left: items
@@ -73,10 +82,10 @@ Public Class BillingDialog
         _grid.AddTextColumn("price", "Price", 21, alignRight:=True)
         _grid.AddTextColumn("amount", "Amount", 22, alignRight:=True)
         _grid.AccessibleName = "Items on this bill"
-        _grid.Bounds = New Rectangle(0, Theme.Dpi(24), Theme.Dpi(LeftW), Theme.Dpi(232))
+        _grid.Bounds = New Rectangle(0, Theme.Dpi(24), Theme.Dpi(LeftW), Theme.Dpi(258))
         Body.Controls.Add(_grid)
 
-        Dim addY = Theme.Dpi(284)
+        Dim addY = Theme.Dpi(310)
         _addon.Placeholder = If(addons.Count > 0, "Choose an add-on", "No add-ons available")
         _addon.FieldName = "Add-on"
         _addon.SetItems(addons.Select(Function(a) a.Name), addons.Select(Function(a) Money.Format(a.Price)))
@@ -91,24 +100,29 @@ Public Class BillingDialog
         _btnAdd.Location = New Point(_txtQty.Right + Theme.Dpi(8), addY + (Theme.Dpi(40) - _btnAdd.Height) \ 2)
         _btnAdd.Enabled = addons.Count > 0
         _btnOther.FitToText(110)
-        _btnOther.Location = New Point(0, Theme.Dpi(348))
+        _btnOther.Location = New Point(0, Theme.Dpi(374))
         _btnRemove.FitToText(110)
-        _btnRemove.Location = New Point(_btnOther.Right + Theme.Dpi(8), Theme.Dpi(348))
-        Body.Controls.AddRange({_addon, _txtQty, _btnAdd, _btnOther, _btnRemove})
+        _btnRemove.Location = New Point(_btnOther.Right + Theme.Dpi(8), Theme.Dpi(374))
+        ' Voiding happens here, before the payment is recorded (completed receipts are final).
+        _btnVoid.FitToText(110)
+        _btnVoid.Location = New Point(Theme.Dpi(LeftW) - _btnVoid.Width, Theme.Dpi(374))
+        _btnVoid.Visible = Session.HasPermission(Permissions.VoidSale)
+        _btnVoid.AccessibleDescription = "Void this unpaid bill with a reason. No receipt is issued."
+        Body.Controls.AddRange({_addon, _txtQty, _btnAdd, _btnOther, _btnRemove, _btnVoid})
 
         ' ---------------- right: totals and payment
-        _summary.Bounds = New Rectangle(Theme.Dpi(RightX), 0, Theme.Dpi(RightW), Theme.Dpi(192))
+        _summary.Bounds = New Rectangle(Theme.Dpi(RightX), 0, Theme.Dpi(RightW), Theme.Dpi(218))
         _btnDiscount.FitToText(140)
-        _btnDiscount.Location = New Point(Theme.Dpi(RightX), Theme.Dpi(200))
+        _btnDiscount.Location = New Point(Theme.Dpi(RightX), Theme.Dpi(226))
         Body.Controls.AddRange({_summary, _btnDiscount})
 
-        Dim lblMethod = MakeLabel("Paid via", RightX, 248, RightW)
+        Dim lblMethod = MakeLabel("Paid via", RightX, 274, RightW)
         _method.SetItems(PaymentMethods.All)
         _method.AccessibleName = "Paid via"
         _method.Bounds = New Rectangle(Theme.Dpi(RightX), lblMethod.Bottom + Theme.Dpi(4), Theme.Dpi(RightW), Theme.Dpi(40))
         Body.Controls.Add(_method)
 
-        _lblAmount = MakeLabel("Amount received (₱)", RightX, 318, RightW \ 2 + 30)
+        _lblAmount = MakeLabel("Amount received (₱)", RightX, 344, RightW \ 2 + 30)
         _lblChange.Font = Theme.LabelBold
         _lblChange.ForeColor = Theme.Ink
         _lblChange.TextAlign = ContentAlignment.BottomRight
@@ -136,6 +150,7 @@ Public Class BillingDialog
         AddHandler _btnOther.Click, Sub() AddOther()
         AddHandler _btnRemove.Click, Sub() RemoveSelected()
         AddHandler _btnDiscount.Click, Sub() EditDiscount()
+        AddHandler _btnVoid.Click, Sub() VoidBill()
         AddHandler _method.SelectedIndexChanged, Sub() OnMethodChanged()
         AddHandler _txtTendered.TextChanged, Sub()
                                                  _dirty = True
@@ -171,7 +186,7 @@ Public Class BillingDialog
 
     Private ReadOnly Property Totals As BillTotals
         Get
-            Return Billing.Compute(_lines, _discount, _booking.Downpayment)
+            Return Billing.Compute(_lines, _discount, _booking.Downpayment, _taxRate)
         End Get
     End Property
 
@@ -322,6 +337,21 @@ Public Class BillingDialog
         Return MyBase.ProcessCmdKey(msg, keyData)
     End Function
 
+    ''' <summary>Void the unpaid bill (asks for the reason). VoidBill checks VOID_SALE again.</summary>
+    Private Sub VoidBill()
+        If IsBusy OrElse Not Session.HasPermission(Permissions.VoidSale) Then Return
+        Dim id = _booking.Id
+        Dim dpNote = If(_booking.Downpayment > 0D, $" The {Money.Format(_booking.Downpayment)} downpayment stays on record.", "")
+        Using dlg As New ReasonDialog("Void bill", $"Void the bill for {_booking.CustomerName}?",
+                                      $"No payment is recorded and no receipt is issued. {_booking.BookingNo} is closed as Voided and leaves Billing.{dpNote} This can't be undone.",
+                                      "Void bill", "e.g. Customer declined the service",
+                                      Function(reason) Billing.VoidBill(id, reason))
+            If dlg.ShowCard(Me) <> DialogResult.OK Then Return
+        End Using
+        WasVoided = True
+        CloseCard(DialogResult.Cancel)
+    End Sub
+
     Protected Overrides Sub OnSecondary()
         If IsBusy Then Return
         If _dirty AndAlso Not LsDialog.Confirm("The items and payment details you entered will be discarded. The booking stays unpaid.",
@@ -338,7 +368,7 @@ Public Class BillingDialog
         Dim fields As New Dictionary(Of String, Control) From {
             {"lines", _grid}, {"discount", _btnDiscount}, {"method", _method}, {"reference", _txtRef}, {"tendered", _txtTendered}}
 
-        Dim check = Billing.ValidateBill(_lines, _discount, _booking.Downpayment)
+        Dim check = Billing.ValidateBill(_lines, _discount, _booking.Downpayment, _taxRate)
         If m = PaymentMethods.Cash AndAlso _txtTendered.Text.Trim().Length > 0 Then
             Dim problem As String = Nothing
             If Not Money.TryParse(_txtTendered.Text, tendered, problem) Then check.AddError("tendered", problem)

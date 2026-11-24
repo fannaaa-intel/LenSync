@@ -116,7 +116,9 @@ CREATE TABLE addons (
 
 -- -----------------------------------------------------------------------------------------------------
 -- Bookings (kept generic so an external booking system could write here later)
--- Status flow: Pending -> Unpaid (shoot done, awaiting billing) -> Paid / Cancelled
+-- Status flow: Pending -> Unpaid (shoot done, awaiting billing) -> Paid
+--              Pending/Unpaid -> Cancelled (booking called off); Unpaid -> Voided (bill voided before payment)
+-- closed_reason/by/at: who closed a Cancelled or Voided booking, when and why (the reason is required).
 -- -----------------------------------------------------------------------------------------------------
 CREATE TABLE bookings (
     id                  INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,6 +133,9 @@ CREATE TABLE bookings (
     downpayment_ref     VARCHAR(50)   NULL,          -- required for e-wallets
     status              VARCHAR(10)   NOT NULL DEFAULT 'Pending',
     notes               TEXT          NULL,
+    closed_reason       VARCHAR(255)  NULL,
+    closed_by           INT           NULL,
+    closed_at           DATETIME      NULL,
     created_by          INT           NULL,
     is_active           TINYINT(1)    NOT NULL DEFAULT 1,
     created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -141,14 +146,17 @@ CREATE TABLE bookings (
     KEY ix_bookings_customer (customer_name),
     CONSTRAINT fk_bookings_package FOREIGN KEY (package_id) REFERENCES packages (id),
     CONSTRAINT fk_bookings_user    FOREIGN KEY (created_by) REFERENCES users (id),
-    CONSTRAINT ck_bookings_status  CHECK (status IN ('Pending', 'Unpaid', 'Paid', 'Cancelled')),
+    CONSTRAINT fk_bookings_closer  FOREIGN KEY (closed_by)  REFERENCES users (id),
+    CONSTRAINT ck_bookings_status  CHECK (status IN ('Pending', 'Unpaid', 'Paid', 'Cancelled', 'Voided')),
     CONSTRAINT ck_bookings_dp      CHECK (downpayment >= 0),
     CONSTRAINT ck_bookings_dp_m    CHECK (downpayment_method IS NULL OR downpayment_method IN ('Cash', 'GCash', 'Maya'))
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------------------------------
 -- Sales
--- Total = sum(items) - discount; Balance due = Total - downpayment; Change = Tendered - Balance due
+-- Total = sum(items) - discount + tax; Tax = (sum(items) - discount) x tax_rate%;
+-- Balance due = Total - downpayment; Change = Tendered - Balance due.
+-- status 'Voided' only on receipts voided before 2026-11-24 (voiding now happens in Billing, before payment).
 -- -----------------------------------------------------------------------------------------------------
 CREATE TABLE transactions (
     id               INT AUTO_INCREMENT PRIMARY KEY,
@@ -159,6 +167,8 @@ CREATE TABLE transactions (
     discount_value   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     discount_amount  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     discount_reason  VARCHAR(255)  NULL,
+    tax_rate         DECIMAL(5,2)  NOT NULL DEFAULT 0.00,  -- percent, copied from settings.tax_rate at the sale
+    tax_amount       DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     total            DECIMAL(12,2) NOT NULL,
     downpayment      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     balance_due      DECIMAL(12,2) NOT NULL,
@@ -186,7 +196,8 @@ CREATE TABLE transactions (
     CONSTRAINT ck_tx_method   CHECK (payment_method IN ('Cash', 'GCash', 'Maya')),
     CONSTRAINT ck_tx_disc     CHECK (discount_type IS NULL OR discount_type IN ('Fixed', 'Percent')),
     CONSTRAINT ck_tx_amounts  CHECK (subtotal >= 0 AND discount_amount >= 0 AND total >= 0 AND downpayment >= 0
-                                     AND amount_tendered >= 0 AND change_amount >= 0)
+                                     AND amount_tendered >= 0 AND change_amount >= 0),
+    CONSTRAINT ck_tx_tax      CHECK (tax_rate >= 0 AND tax_rate <= 100 AND tax_amount >= 0)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE transaction_items (

@@ -32,7 +32,7 @@ Public Class MainForm
                              .Phase = 5, .Description = "Today's services and sales, a 7-day sales chart and the latest transactions."},
         New ModuleInfo With {.Key = Permissions.AddService, .Title = "Add Service", .Subtitle = "Bookings, billing and payment", .Icon = LineIcon.AddService,
                              .Phase = 4, .Description = "Create bookings and record downpayments, then bill finished shoots with add-ons and discounts, take Cash, GCash or Maya payments and print the acknowledgment receipt."},
-        New ModuleInfo With {.Key = Permissions.Reports, .Title = "Reports", .Subtitle = "Sales reports with verification codes", .Icon = LineIcon.Reports,
+        New ModuleInfo With {.Key = Permissions.Reports, .Title = "Reports", .Subtitle = "Preview and print sales reports", .Icon = LineIcon.Reports,
                              .Phase = 6, .Description = "Daily sales, transactions, payment methods, staff and package reports with a printable proof footer."},
         New ModuleInfo With {.Key = Permissions.Settings, .Title = "Settings", .Subtitle = "Users, roles, pricing and business info", .Icon = LineIcon.Settings,
                              .Phase = 3, .Description = "User accounts, role permissions, packages, add-ons, business details, logo, signature and email setup."}

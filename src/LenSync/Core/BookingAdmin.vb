@@ -215,7 +215,7 @@ Namespace Core
             Return Nothing
         End Function
 
-        ''' <summary>Pending/Unpaid -> Cancelled. The reason is added to the booking notes and the audit log.</summary>
+        ''' <summary>Pending/Unpaid -> Cancelled. The reason (required) is kept on the booking (closed_reason) and in the audit log.</summary>
         Public Shared Function Cancel(id As Integer, reason As String) As AdminResult
             Session.Demand(Permissions.AddService)
             reason = If(reason, "").Trim()
@@ -226,7 +226,7 @@ Namespace Core
                     Dim b = BookingRepository.GetForUpdate(conn, tx, id)
                     If b Is Nothing Then Return AdminResult.Fail("", "This booking no longer exists.")
                     If Not b.IsEditable Then Return AdminResult.Fail("", $"This booking is already {b.Status.ToLowerInvariant()}.")
-                    BookingRepository.SetStatus(conn, tx, id, BookingStatus.Cancelled, "Cancelled: " & reason)
+                    BookingRepository.Close(conn, tx, id, BookingStatus.Cancelled, reason, Session.CurrentUserId)
                     AuditLog.Write(conn, tx, AuditActions.BookingCancel, "bookings", id,
                                    $"{b.BookingNo} ({b.CustomerName}) cancelled. Reason: {reason}" &
                                    If(b.Downpayment > 0D, $"; downpayment on record {Money.Format(b.Downpayment)}", ""))

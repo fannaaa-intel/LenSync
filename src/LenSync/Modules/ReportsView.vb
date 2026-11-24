@@ -7,7 +7,7 @@ Imports LenSync.Modules.Reports
 
 Namespace Modules
 
-    ''' <summary>Reports module: Create report (preview + print with proof), History (printed reports), Verify (check a paper report).</summary>
+    ''' <summary>Reports module: Create report (preview + print), History (printed reports).</summary>
     Public Class ReportsView
         Inherits TabbedView
 
@@ -15,18 +15,16 @@ Namespace Modules
         Private _pending As ReportLog
 
         Public Sub New()
-            MyBase.New({"Create report", "History", "Verify"})
+            MyBase.New({"Create report", "History"})
         End Sub
 
         Protected Overrides Function CreatePage(index As Integer) As ModulePage
-            Select Case index
-                Case 0
-                    _create = New CreateReportPage()
-                    If _pending IsNot Nothing Then ApplyPending()
-                    Return _create
-                Case 1 : Return New HistoryPage(AddressOf OpenAgain)
-                Case Else : Return New VerifyPage()
-            End Select
+            If index = 0 Then
+                _create = New CreateReportPage()
+                If _pending IsNot Nothing Then ApplyPending()
+                Return _create
+            End If
+            Return New HistoryPage(AddressOf OpenAgain)
         End Function
 
         ''' <summary>History > Open again: same report and period on the Create tab (it rebuilds when shown).</summary>

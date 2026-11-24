@@ -16,6 +16,8 @@ Namespace Core
         Public Const BusinessName As String = "business_name"
         Public Const Address As String = "address"
         Public Const Contact As String = "contact"
+        ''' <summary>Tax rate in percent (invariant decimal text, e.g. "6.00"); "0" = no tax line on bills.</summary>
+        Public Const TaxRate As String = "tax_rate"
         Public Const LogoPath As String = "logo_path"
         Public Const SignaturePath As String = "signature_path"
         Public Const SmtpHost As String = "smtp_host"

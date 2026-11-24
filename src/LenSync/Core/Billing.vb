@@ -9,9 +9,11 @@ Namespace Core
 
     ''' <summary>
     ''' Add Service > Billing and Sales. Money rules:
-    ''' Total = sum(items) - discount; Balance due = Total - downpayment; Change = Tendered - Balance due.
+    ''' Tax = (sum(items) - discount) x tax rate; Total = sum(items) - discount + tax;
+    ''' Balance due = Total - downpayment; Change = Tendered - Balance due.
     ''' E-wallets (GCash/Maya) need a reference number and pay exactly the balance (change 0).
     ''' Completing a sale is ONE DB transaction: receipt number, sale, items, booking -> Paid and the audit entries.
+    ''' A bill can be voided only BEFORE it is paid (VoidBill, VOID_SALE); completed receipts are final.
     ''' </summary>
     Public NotInheritable Class Billing
 
@@ -29,13 +31,37 @@ Namespace Core
             Return d.Value
         End Function
 
-        Public Shared Function Compute(lines As IEnumerable(Of BillLine), d As Discount, downpayment As Decimal) As BillTotals
+        ''' <summary>Tax on the discounted amount, rounded to the centavo. <paramref name="ratePercent"/>: 6 = 6%.</summary>
+        Public Shared Function TaxAmountFor(taxable As Decimal, ratePercent As Decimal) As Decimal
+            If taxable <= 0D OrElse ratePercent <= 0D Then Return 0D
+            Return Decimal.Round(taxable * ratePercent / 100D, 2, MidpointRounding.AwayFromZero)
+        End Function
+
+        Public Shared Function Compute(lines As IEnumerable(Of BillLine), d As Discount, downpayment As Decimal, taxRate As Decimal) As BillTotals
             Dim subtotal = lines.Sum(Function(l) l.LineTotal)
             Dim discountAmount = Math.Min(DiscountAmountFor(subtotal, d), subtotal)
-            Dim total = subtotal - discountAmount
-            Return New BillTotals With {.Subtotal = subtotal, .DiscountAmount = discountAmount, .Total = total,
-                                        .Downpayment = downpayment, .BalanceDue = total - downpayment}
+            Dim taxable = subtotal - discountAmount
+            Dim rate = Math.Max(0D, taxRate)
+            Dim tax = TaxAmountFor(taxable, rate)
+            Dim total = taxable + tax
+            Return New BillTotals With {.Subtotal = subtotal, .DiscountAmount = discountAmount, .TaxRate = rate, .TaxAmount = tax,
+                                        .Total = total, .Downpayment = downpayment, .BalanceDue = total - downpayment}
         End Function
+
+        ''' <summary>"6%", "12.5%".</summary>
+        Public Shared Function FormatRate(ratePercent As Decimal) As String
+            Return ratePercent.ToString("0.##", Globalization.CultureInfo.InvariantCulture) & "%"
+        End Function
+
+        ''' <summary>The studio's tax rate (Settings > Studio). Missing or unreadable = 0 (no tax).</summary>
+        Public Shared Function CurrentTaxRate() As Decimal
+            Dim rate As Decimal
+            If Not Decimal.TryParse(AppSettings.GetValue(AppSettings.TaxRate, "0"), Globalization.NumberStyles.Number,
+                                    Globalization.CultureInfo.InvariantCulture, rate) Then Return 0D
+            Return If(rate < 0D OrElse rate > MaxTaxRate, 0D, rate)
+        End Function
+
+        Public Const MaxTaxRate As Decimal = 100D
 
         ' ================================================================ validation (also used by the dialogs)
         Public Shared Function DiscountValueProblem(kind As String, value As Decimal, subtotal As Decimal) As String
@@ -61,7 +87,7 @@ Namespace Core
         End Function
 
         ''' <summary>Checks the items, the discount and that the total still covers the downpayment.</summary>
-        Public Shared Function ValidateBill(lines As IList(Of BillLine), d As Discount, downpayment As Decimal) As AdminResult
+        Public Shared Function ValidateBill(lines As IList(Of BillLine), d As Discount, downpayment As Decimal, taxRate As Decimal) As AdminResult
             Dim result As New AdminResult()
             If lines.Count = 0 Then
                 result.AddError("lines", "Add at least one item.")
@@ -80,8 +106,10 @@ Namespace Core
                     Exit For
                 End If
             Next
-            Dim totals = Compute(lines, d, downpayment)
-            If totals.Subtotal > Money.MaxAmount Then result.AddError("lines", $"The bill can't be more than {Money.Format(Money.MaxAmount)}.")
+            Dim totals = Compute(lines, d, downpayment, taxRate)
+            If totals.Subtotal > Money.MaxAmount OrElse totals.Total > Money.MaxAmount Then
+                result.AddError("lines", $"The bill can't be more than {Money.Format(Money.MaxAmount)}.")
+            End If
             If d IsNot Nothing Then
                 Dim p = DiscountValueProblem(d.Kind, d.Value, totals.Subtotal)
                 If p Is Nothing Then p = BookingAdmin.ReasonProblem(d.Reason)
@@ -117,12 +145,13 @@ Namespace Core
             Return BookingRepository.ListUnpaid()
         End Function
 
-        ''' <summary>The booking to bill (must still be Unpaid) and the active add-ons to choose from.</summary>
-        Public Shared Function StartBill(bookingId As Integer) As Tuple(Of Booking, List(Of PriceItem))
+        ''' <summary>The booking to bill (must still be Unpaid), the active add-ons to choose from and the tax rate.</summary>
+        Public Shared Function StartBill(bookingId As Integer) As BillStart
             Session.Demand(Permissions.AddService)
-            Dim b = BookingRepository.GetById(bookingId)
-            Dim addons = PriceItemRepository.List(PriceItemKind.Addon).Where(Function(a) a.IsActive).ToList()
-            Return Tuple.Create(b, addons)
+            Return New BillStart With {
+                .Booking = BookingRepository.GetById(bookingId),
+                .Addons = PriceItemRepository.List(PriceItemKind.Addon).Where(Function(a) a.IsActive).ToList(),
+                .TaxRate = CurrentTaxRate()}
         End Function
 
         ''' <summary>The bill starts with the booked package at its current price.</summary>
@@ -196,8 +225,10 @@ Namespace Core
             Dim method = If(req.PaymentMethod, "")
             Dim reference = If(PaymentMethods.IsEWallet(method), BookingAdmin.NormalizeReference(req.ReferenceNo), "")
 
-            Dim result = ValidateBill(lines, d, booking.Downpayment)
-            Dim totals = Compute(lines, d, booking.Downpayment)
+            ' The rate is read here, not taken from the request: a bill can't choose its own tax.
+            Dim taxRate = CurrentTaxRate()
+            Dim result = ValidateBill(lines, d, booking.Downpayment, taxRate)
+            Dim totals = Compute(lines, d, booking.Downpayment, taxRate)
             If result.Ok Then
                 For Each e In PaymentProblems(method, reference, req.AmountTendered, totals.BalanceDue).Errors
                     result.AddError(e.Key, e.Value)
@@ -205,7 +236,7 @@ Namespace Core
             End If
             If Not result.Ok Then Return result
             If totals.BalanceDue <> req.ExpectedBalance Then
-                Return AdminResult.Fail("", "Prices or the booking changed while this bill was open. Close it and bill the booking again to see the new amounts.")
+                Return AdminResult.Fail("", "Prices, the tax rate or the booking changed while this bill was open. Close it and bill the booking again to see the new amounts.")
             End If
             Dim tendered = If(PaymentMethods.IsEWallet(method), totals.BalanceDue, req.AmountTendered)
             Dim change = tendered - totals.BalanceDue
@@ -224,7 +255,8 @@ Namespace Core
                     Next
                     BookingRepository.SetStatus(conn, tx, booking.Id, BookingStatus.Paid)
                     AuditLog.Write(conn, tx, AuditActions.SaleComplete, "transactions", txId,
-                                   $"{receiptNo} for {booking.BookingNo} ({booking.CustomerName}): total {Money.Format(totals.Total)}, " &
+                                   $"{receiptNo} for {booking.BookingNo} ({booking.CustomerName}): total {Money.Format(totals.Total)}" &
+                                   If(totals.TaxAmount > 0D, $" incl. tax {FormatRate(totals.TaxRate)} {Money.Format(totals.TaxAmount)}", "") & ", " &
                                    $"downpayment {Money.Format(totals.Downpayment)}, paid {Money.Format(totals.BalanceDue)} via {method}" &
                                    If(reference.Length > 0, $" (ref {reference})", "") &
                                    If(method = PaymentMethods.Cash, $", received {Money.Format(tendered)}, change {Money.Format(change)}", ""))
@@ -242,24 +274,27 @@ Namespace Core
         End Function
 
         ' ================================================================ void / print
-        ''' <summary>Voids a completed sale (VOID_SALE only). The booking returns to Unpaid so it can be billed again.</summary>
-        Public Shared Function VoidSale(transactionId As Integer, reason As String) As AdminResult
+        ''' <summary>
+        ''' Voids an UNPAID bill (VOID_SALE only), before any payment is recorded: the booking becomes Voided with the
+        ''' reason, no receipt is issued, and it leaves Billing. Paid receipts can't be voided.
+        ''' </summary>
+        Public Shared Function VoidBill(bookingId As Integer, reason As String) As AdminResult
             Session.Demand(Permissions.VoidSale)
             reason = If(reason, "").Trim()
             Dim p = BookingAdmin.ReasonProblem(reason)
             If p IsNot Nothing Then Return AdminResult.Fail("reason", p)
             Return Db.InTransaction(Of AdminResult)(
                 Function(conn, tx)
-                    Dim sale = TransactionRepository.LockForUpdate(conn, tx, transactionId)
-                    If sale Is Nothing Then Return AdminResult.Fail("", "This sale no longer exists.")
-                    If sale.Item1 <> "Completed" Then Return AdminResult.Fail("", "This sale is already voided.")
-                    TransactionRepository.SetVoided(conn, tx, transactionId, reason, Session.CurrentUserId)
-                    Dim b = BookingRepository.GetForUpdate(conn, tx, sale.Item2)
-                    If b IsNot Nothing AndAlso b.Status = BookingStatus.Paid Then BookingRepository.SetStatus(conn, tx, b.Id, BookingStatus.Unpaid)
-                    AuditLog.Write(conn, tx, AuditActions.VoidSale, "transactions", transactionId,
-                                   $"{sale.Item3} voided (total {Money.Format(sale.Item4)}). Reason: {reason}" &
-                                   If(b IsNot Nothing, $"; {b.BookingNo} is back to Unpaid", ""))
-                    Return AdminResult.Success(transactionId)
+                    Dim b = BookingRepository.GetForUpdate(conn, tx, bookingId)
+                    If b Is Nothing Then Return AdminResult.Fail("", "This booking no longer exists.")
+                    If b.Status <> BookingStatus.Unpaid Then
+                        Return AdminResult.Fail("", $"This booking is {b.Status.ToLowerInvariant()}. Only unpaid bills can be voided.")
+                    End If
+                    BookingRepository.Close(conn, tx, b.Id, BookingStatus.Voided, reason, Session.CurrentUserId)
+                    AuditLog.Write(conn, tx, AuditActions.VoidSale, "bookings", b.Id,
+                                   $"Bill for {b.BookingNo} ({b.CustomerName}) voided before payment. Reason: {reason}" &
+                                   If(b.Downpayment > 0D, $"; downpayment on record {Money.Format(b.Downpayment)}", ""))
+                    Return AdminResult.Success(b.Id)
                 End Function)
         End Function
 

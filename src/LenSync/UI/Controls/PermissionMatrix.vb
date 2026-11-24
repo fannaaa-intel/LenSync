@@ -26,9 +26,9 @@ Namespace UI.Controls
         Private Shared ReadOnly Descriptions As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase) From {
             {"DASHBOARD", "Today's services and sales, recent transactions"},
             {"ADD_SERVICE", "Bookings, downpayments, billing and payment"},
-            {"REPORTS", "Sales reports, printing and verification"},
+            {"REPORTS", "Sales reports: preview, print and history"},
             {"SETTINGS", "Users, roles, pricing, studio and email setup"},
-            {"VOID_SALE", "Cancel a completed sale (reason required)"}
+            {"VOID_SALE", "Void an unpaid bill in Billing, before payment (reason required)"}
         }
 
         Public Sub New()

@@ -45,10 +45,10 @@ Namespace Core
         Public Const BookingCancel As String = "BOOKING_CANCEL"
         Public Const SaleComplete As String = "SALE_COMPLETE"
         Public Const Discount As String = "DISCOUNT"
+        ''' <summary>An unpaid bill voided in Billing (before 2026-11-24 also used for voided receipts).</summary>
         Public Const VoidSale As String = "VOID"
         Public Const ReceiptPrint As String = "RECEIPT_PRINT"
         Public Const ReportPrint As String = "REPORT_PRINT"
-        Public Const ReportVerify As String = "REPORT_VERIFY"
 
     End Class
 

@@ -6,16 +6,16 @@ Imports System.Data
 Imports System.Globalization
 Imports System.Security.Cryptography
 Imports System.Text
-Imports System.Text.RegularExpressions
 Imports LenSync.Data
 Imports LenSync.Models
 
 Namespace Core
 
     ''' <summary>
-    ''' Reports: build the five report types, issue a printed report (number + proof in one DB transaction) and verify
-    ''' a paper report. Proof: content_hash = SHA-256 of the report's data (canonical text); verification_code = first 10
-    ''' Base32 characters of HMAC-SHA256(content_hash + report_no) keyed with settings.report_secret.
+    ''' Reports: build the five report types and issue a printed report (number + record in one DB transaction).
+    ''' The Verify feature was removed (panel revision 2026-11-24): nothing is shown to users, but report_logs still
+    ''' records content_hash = SHA-256 of the report's data (canonical text) and verification_code = first 10 Base32
+    ''' characters of HMAC-SHA256(content_hash + report_no) keyed with settings.report_secret, as an internal record.
     ''' </summary>
     Public NotInheritable Class ReportService
 
@@ -24,8 +24,6 @@ Namespace Core
 
         Public Const MaxDays As Integer = 366
         Private Shared ReadOnly PH As CultureInfo = CultureInfo.GetCultureInfo("en-PH")
-        Private Shared ReadOnly ReportNoPattern As New Regex("^RPT-\d{4}-\d{4,}$")
-        Private Shared ReadOnly CodePattern As New Regex("^[A-Z2-7]{10}$")
 
         ' ================================================================ validation
         Public Shared Function RangeProblem(fromDay As Date, toDay As Date) As String
@@ -60,11 +58,13 @@ Namespace Core
             Dim tot = ReportRepository.Totals(fromDay, toDay)
             Dim receipts = Db.Int(tot, "receipts")
             Dim discounts = Convert.ToDecimal(tot("discounts"))
+            Dim tax = Convert.ToDecimal(tot("tax"))
             d.NetSales = Convert.ToDecimal(tot("net"))
             d.Summary.Add(Pair("Net sales", Money.Format(d.NetSales)))
             d.Summary.Add(Pair("Receipts", receipts.ToString("#,##0", CultureInfo.InvariantCulture)))
             d.Summary.Add(Pair("Discounts given", Money.Format(discounts)))
-            d.Summary.Add(Pair("Voided receipts", Db.Int(tot, "voided").ToString("#,##0", CultureInfo.InvariantCulture)))
+            d.Summary.Add(Pair("Tax collected", Money.Format(tax)))
+            d.Summary.Add(Pair("Voided bills", ReportRepository.VoidedBills(fromDay, toDay).ToString("#,##0", CultureInfo.InvariantCulture)))
             Select Case type
                 Case ReportType.DailySales : d.Tables.Add(DailyTable(fromDay, toDay))
                 Case ReportType.Transactions : d.Tables.Add(TransactionsTable(fromDay, toDay))
@@ -94,30 +94,32 @@ Namespace Core
 
         Private Shared Function DailyTable(fromDay As Date, toDay As Date) As ReportTable
             Dim t As New ReportTable()
-            t.AddColumn("Date", 20)
-            t.AddColumn("Receipts", 10, True)
-            t.AddColumn("Gross (₱)", 15, True)
-            t.AddColumn("Discounts (₱)", 14, True)
-            t.AddColumn("Net sales (₱)", 15, True)
-            t.AddColumn("Downpayments (₱)", 15, True)
+            ' Weights fit "Mon, Nov 24, 2026" and "1,234,567.00" on letter paper at the print body size.
+            t.AddColumn("Date", 17)
+            t.AddColumn("Receipts", 9, True)
+            t.AddColumn("Gross (₱)", 14, True)
+            t.AddColumn("Discounts (₱)", 13, True)
+            t.AddColumn("Tax (₱)", 11, True)
+            t.AddColumn("Net sales (₱)", 14, True)
+            t.AddColumn("Downpayments (₱)", 18, True)
             t.AddColumn("Balances paid (₱)", 15, True)
             Dim byDay = ReportRepository.DailySales(fromDay, toDay).Rows.Cast(Of DataRow)().ToDictionary(Function(r) Convert.ToDateTime(r("d")).Date)
-            Dim sums(5) As Decimal
+            Dim sums(6) As Decimal
             Dim day = fromDay
             While day <= toDay
                 Dim r As DataRow = Nothing
-                Dim values = {0D, 0D, 0D, 0D, 0D, 0D}
+                Dim values = {0D, 0D, 0D, 0D, 0D, 0D, 0D}
                 If byDay.TryGetValue(day, r) Then
-                    values = {Dec(r, "receipts"), Dec(r, "gross"), Dec(r, "discounts"), Dec(r, "net"), Dec(r, "downpayments"), Dec(r, "balances")}
+                    values = {Dec(r, "receipts"), Dec(r, "gross"), Dec(r, "discounts"), Dec(r, "tax"), Dec(r, "net"), Dec(r, "downpayments"), Dec(r, "balances")}
                 End If
-                For i = 0 To 5
+                For i = 0 To 6
                     sums(i) += values(i)
                 Next
-                t.AddRow(False, day.ToString("ddd, MMM d, yyyy", PH), N(CInt(values(0))), M(values(1)), M(values(2)), M(values(3)), M(values(4)), M(values(5)))
+                t.AddRow(False, day.ToString("ddd, MMM d, yyyy", PH), N(CInt(values(0))), M(values(1)), M(values(2)), M(values(3)), M(values(4)), M(values(5)), M(values(6)))
                 day = day.AddDays(1)
             End While
-            t.Totals = {"Total", N(CInt(sums(0))), M(sums(1)), M(sums(2)), M(sums(3)), M(sums(4)), M(sums(5))}
-            t.Note = "Net sales = gross − discounts. Downpayments are counted on the day of the receipt they were applied to."
+            t.Totals = {"Total", N(CInt(sums(0))), M(sums(1)), M(sums(2)), M(sums(3)), M(sums(4)), M(sums(5)), M(sums(6))}
+            t.Note = "Net sales = gross − discounts + tax. Downpayments are counted on the day of the receipt they were applied to."
             Return t
         End Function
 
@@ -140,7 +142,7 @@ Namespace Core
                          Db.Str(r, "customer_name"), Db.Str(r, "cashier"), Db.Str(r, "payment_method"), M(total), Db.Str(r, "status"))
             Next
             t.Totals = {"Total", "", "", "", "", M(net), ""}
-            t.Note = "Voided receipts are listed (status Voided, printed lighter) but are not included in the total."
+            t.Note = "Totals include tax. Receipts voided before voiding moved to Billing are listed lighter and not added to the total."
             Return t
         End Function
 
@@ -170,18 +172,18 @@ Namespace Core
             Dim t As New ReportTable()
             t.AddColumn("Cashier", 34)
             t.AddColumn("Receipts", 13, True)
-            t.AddColumn("Net sales (₱)", 20, True)
-            t.AddColumn("Discounts (₱)", 19, True)
-            t.AddColumn("Voided", 14, True)
-            Dim receipts = 0, voided = 0
-            Dim net = 0D, disc = 0D
+            t.AddColumn("Net sales (₱)", 19, True)
+            t.AddColumn("Discounts (₱)", 17, True)
+            t.AddColumn("Tax (₱)", 17, True)
+            Dim receipts = 0
+            Dim net = 0D, disc = 0D, tax = 0D
             For Each r As DataRow In ReportRepository.ByStaff(fromDay, toDay).Rows
-                Dim rc = CInt(Dec(r, "receipts")), vc = CInt(Dec(r, "voided"))
-                Dim nv = Dec(r, "net"), dv = Dec(r, "discounts")
-                receipts += rc : voided += vc : net += nv : disc += dv
-                t.AddRow(False, $"{Db.Str(r, "cashier")} ({Db.Str(r, "username")})", N(rc), M(nv), M(dv), N(vc))
+                Dim rc = CInt(Dec(r, "receipts"))
+                Dim nv = Dec(r, "net"), dv = Dec(r, "discounts"), tv = Dec(r, "tax")
+                receipts += rc : net += nv : disc += dv : tax += tv
+                t.AddRow(False, $"{Db.Str(r, "cashier")} ({Db.Str(r, "username")})", N(rc), M(nv), M(dv), M(tv))
             Next
-            t.Totals = {"Total", N(receipts), M(net), M(disc), N(voided)}
+            t.Totals = {"Total", N(receipts), M(net), M(disc), M(tax)}
             Return t
         End Function
 
@@ -208,7 +210,7 @@ Namespace Core
                 t.Totals = {"Total", N(qty), "", M(amount)}
                 result.Add(t)
             Next
-            result(result.Count - 1).Note = "Amounts are before discounts (see Discounts given in the summary)."
+            result(result.Count - 1).Note = "Amounts are before discounts and tax (see Discounts given and Tax collected in the summary)."
             Return result
         End Function
 
@@ -266,46 +268,10 @@ Namespace Core
             Return sb.ToString()
         End Function
 
-        ''' <summary>"ABCDEFGHIJ" -> "ABCDE-FGHIJ" (easier to read and type).</summary>
-        Public Shared Function FormatCode(code As String) As String
-            If String.IsNullOrEmpty(code) OrElse code.Length <> 10 Then Return If(code, "")
-            Return code.Substring(0, 5) & "-" & code.Substring(5)
-        End Function
-
-        Public Shared Function NormalizeReportNo(text As String) As String
-            Return If(text, "").Trim().ToUpperInvariant().Replace(" ", "")
-        End Function
-
-        Public Shared Function NormalizeCode(text As String) As String
-            Return If(text, "").ToUpperInvariant().Replace("-", "").Replace(" ", "").Trim()
-        End Function
-
-        Public Shared Function ReportNoProblem(text As String) As String
-            If NormalizeReportNo(text).Length = 0 Then Return "Enter the report number, e.g. RPT-2026-0001."
-            If Not ReportNoPattern.IsMatch(NormalizeReportNo(text)) Then Return "Use the format RPT-2026-0001."
-            Return Nothing
-        End Function
-
-        Public Shared Function CodeProblem(text As String) As String
-            If NormalizeCode(text).Length = 0 Then Return "Enter the 10-character verification code."
-            If Not CodePattern.IsMatch(NormalizeCode(text)) Then Return "The code has 10 letters and digits (2-7), e.g. ABCDE-FGH23."
-            Return Nothing
-        End Function
-
-        Private Shared Function SameText(a As String, b As String) As Boolean
-            ' Constant-time compare so timing doesn't hint how much of a guessed code is right.
-            If a Is Nothing OrElse b Is Nothing OrElse a.Length <> b.Length Then Return False
-            Dim diff = 0
-            For i = 0 To a.Length - 1
-                diff = diff Or (AscW(a(i)) Xor AscW(b(i)))
-            Next
-            Return diff = 0
-        End Function
-
-        ' ================================================================ issue / history / verify
+        ' ================================================================ issue / history
         ''' <summary>
-        ''' Gives the report its number and proof, records it in report_logs with the printer, and audits it, all in one
-        ''' DB transaction. Call right before printing; on failure the report stays unissued.
+        ''' Gives the report its number (and the internal hash/code record), records it in report_logs with the printer,
+        ''' and audits it, all in one DB transaction. Call right before printing; on failure the report stays unissued.
         ''' </summary>
         Public Shared Sub Issue(d As ReportData, printerName As String)
             Session.Demand(Permissions.Reports)
@@ -337,28 +303,6 @@ Namespace Core
         Public Shared Function History() As List(Of ReportLog)
             Session.Demand(Permissions.Reports)
             Return ReportRepository.ListLogs()
-        End Function
-
-        ''' <summary>Checks a paper report's number and code; for a genuine one, also whether the period's data changed since.</summary>
-        Public Shared Function Verify(reportNo As String, code As String) As VerifyResult
-            Session.Demand(Permissions.Reports)
-            Dim no = NormalizeReportNo(reportNo)
-            Dim c = NormalizeCode(code)
-            Dim log = ReportRepository.FindLog(no)
-            If log Is Nothing Then
-                AuditLog.Write(AuditActions.ReportVerify, "report_logs", Nothing, $"{no}: not found")
-                Return New VerifyResult With {.Outcome = VerifyOutcome.NotFound}
-            End If
-            Dim expected = ComputeCode(log.ContentHash, log.ReportNo)
-            If Not (SameText(expected, c) AndAlso SameText(log.VerificationCode, c)) Then
-                AuditLog.Write(AuditActions.ReportVerify, "report_logs", log.Id, $"{no}: code does not match")
-                Return New VerifyResult With {.Outcome = VerifyOutcome.CodeMismatch}
-            End If
-            Dim unchanged = False
-            Dim t As ReportType
-            If ReportTypes.FromKey(log.TypeKey, t) Then unchanged = ComputeHash(BuildCore(t, log.DateFrom.Date, log.DateTo.Date)) = log.ContentHash
-            AuditLog.Write(AuditActions.ReportVerify, "report_logs", log.Id, $"{no}: genuine; data {If(unchanged, "unchanged", "changed since printing")}")
-            Return New VerifyResult With {.Outcome = VerifyOutcome.Genuine, .Log = log, .DataUnchanged = unchanged}
         End Function
 
     End Class

@@ -10,7 +10,7 @@ Imports LenSync.UI.Controls
 Imports LenSync.UI.Dialogs
 
 ''' <summary>
-''' Asks for a reason, then runs an action that needs it (cancel a booking, void a sale). Heavier frame: these
+''' Asks for a reason, then runs an action that needs it (cancel a booking, void an unpaid bill). Heavier frame: these
 ''' actions can't be undone. The action runs off the UI thread; its field errors show under the reason box.
 ''' </summary>
 Public Class ReasonDialog
@@ -26,7 +26,7 @@ Public Class ReasonDialog
         StrongFrame = True
         Dim w = Theme.Dpi(400)
         Dim lbl As New Label() With {
-            .Text = "Reason", .Font = Theme.LabelBold, .ForeColor = Theme.Charcoal, .TextAlign = ContentAlignment.BottomLeft,
+            .Text = "Reason / remarks (required)", .Font = Theme.LabelBold, .ForeColor = Theme.Charcoal, .TextAlign = ContentAlignment.BottomLeft,
             .Bounds = New Rectangle(0, 0, w, Theme.LabelBold.Height + Theme.Dpi(4))}
         _txtReason.FieldName = "Reason"
         _txtReason.MaxLength = 255

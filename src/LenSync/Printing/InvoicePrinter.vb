@@ -15,8 +15,10 @@ Imports LenSync.Printing.PrintKit
 Namespace Printing
 
     ''' <summary>
-    ''' The ACKNOWLEDGMENT RECEIPT on half letter (5.5" x 8.5"). One Render routine draws in points, so the on-screen
-    ''' preview and the printed page are the same drawing. The system is not BIR-registered, so the footer says so.
+    ''' The ACKNOWLEDGMENT RECEIPT: one receipt per page, 5.5" wide and only as tall as its content (the footer follows
+    ''' the totals, so there is no empty space at the bottom; 12 lines still fit within half letter). One Render routine
+    ''' draws in points, so the on-screen preview and the printed page are the same drawing. The system is not
+    ''' BIR-registered, so the footer says so.
     ''' </summary>
     Public NotInheritable Class InvoicePrinter
 
@@ -24,18 +26,33 @@ Namespace Printing
         End Sub
 
         Public Const PageWidthPt As Single = 396.0F     ' 5.5 in
-        Public Const PageHeightPt As Single = 612.0F    ' 8.5 in
-        Private Const Side As Single = 28.0F
+        ''' <summary>The tallest a receipt gets (half letter, 8.5 in).</summary>
+        Public Const MaxPageHeightPt As Single = 612.0F
+        Private Const Side As Single = 26.0F
+        Private Const BottomMargin As Single = 20.0F
         Private Shared ReadOnly PH As CultureInfo = CultureInfo.GetCultureInfo("en-PH")
 
+        ' ================================================================ size
+        ''' <summary>The page height (points) this receipt needs: its content plus a small bottom margin.</summary>
+        Public Shared Function PageHeightFor(r As Receipt) As Single
+            Using bmp As New Bitmap(1, 1)
+                Using g = Graphics.FromImage(bmp)
+                    g.PageUnit = GraphicsUnit.Point
+                    Dim bottom = Render(g, r, MaxPageHeightPt)
+                    Return CSng(Math.Ceiling(Math.Min(MaxPageHeightPt, bottom + BottomMargin)))
+                End Using
+            End Using
+        End Function
+
         ' ================================================================ preview
-        ''' <summary>The receipt as a picture <paramref name="widthPx"/> wide (height follows the paper's shape).</summary>
+        ''' <summary>The receipt as a picture <paramref name="widthPx"/> wide (height follows the receipt's shape).</summary>
         Public Shared Function RenderPreview(r As Receipt, widthPx As Integer) As Bitmap
-            Dim bmp = NewPageBitmap(widthPx, PageWidthPt, PageHeightPt)
+            Dim pageH = PageHeightFor(r)
+            Dim bmp = NewPageBitmap(widthPx, PageWidthPt, pageH)
             Using g = Graphics.FromImage(bmp)
                 g.Clear(Theme.White)
                 g.PageUnit = GraphicsUnit.Point
-                Render(g, r)
+                Render(g, r, pageH)
             End Using
             Return bmp
         End Function
@@ -57,14 +74,16 @@ Namespace Printing
                                                      .AllowSelection = False, .AllowPrintToFile = False}
                     If dlg.ShowDialog(owner) <> DialogResult.OK Then Return Nothing
                 End Using
-                doc.DefaultPageSettings.PaperSize = HalfLetter(doc.PrinterSettings)
+                ' One receipt per page: a 5.5" page exactly as tall as this receipt (hundredths of an inch).
+                Dim pageH = PageHeightFor(r)
+                doc.DefaultPageSettings.PaperSize = New PaperSize("LENSYNC receipt", 550, CInt(Math.Ceiling(pageH / 72.0F * 100.0F)))
                 doc.DefaultPageSettings.Landscape = False
                 doc.DefaultPageSettings.Margins = New Margins(0, 0, 0, 0)
                 doc.PrintController = New StandardPrintController()   ' no system "Printing page 1" box
                 AddHandler doc.PrintPage,
                     Sub(sender, e)
                         PreparePrinterGraphics(e)
-                        Render(e.Graphics, r)
+                        Render(e.Graphics, r, pageH)
                         e.HasMorePages = False
                     End Sub
                 doc.Print()
@@ -72,16 +91,9 @@ Namespace Printing
             End Using
         End Function
 
-        ''' <summary>The printer's own 5.5" x 8.5" size (Statement) if it has one, else a custom half-letter size.</summary>
-        Private Shared Function HalfLetter(settings As PrinterSettings) As PaperSize
-            For Each size As PaperSize In settings.PaperSizes
-                If size.Kind = PaperKind.Statement Then Return size
-            Next
-            Return New PaperSize("Half Letter", 550, 850)
-        End Function
-
         ' ================================================================ drawing (points)
-        Public Shared Sub Render(g As Graphics, r As Receipt)
+        ''' <summary>Draws the receipt on a page <paramref name="pageHeight"/> points tall; returns the bottom of the content.</summary>
+        Public Shared Function Render(g As Graphics, r As Receipt, pageHeight As Single) As Single
             g.SmoothingMode = SmoothingMode.AntiAlias
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit
             Dim left = Side
@@ -90,34 +102,34 @@ Namespace Printing
 
             ' Brand motif: thin viewfinder brackets framing the page.
             Using pen As New Pen(Theme.Silver, 0.8F)
-                Gfx.DrawViewfinder(g, New RectangleF(12, 12, PageWidthPt - 24, PageHeightPt - 24), 18, pen)
+                Gfx.DrawViewfinder(g, New RectangleF(10, 10, PageWidthPt - 20, pageHeight - 20), 16, pen)
             End Using
 
             If r.PrintedCount > 0 Then
-                Text(g, $"REPRINT · COPY {r.PrintedCount + 1}", Theme.Print.SmallBold, Theme.Slate, New RectangleF(left, 18, inner, 10), StringAlignment.Far)
+                Text(g, $"REPRINT · COPY {r.PrintedCount + 1}", Theme.Print.SmallBold, Theme.Slate, New RectangleF(left, 14, inner, 10), StringAlignment.Far)
             End If
 
             ' Studio header.
-            Dim y = 26.0F
+            Dim y = 20.0F
             Dim logo = LoadImage(r.LogoPath)
             If logo IsNot Nothing Then
                 Using logo
-                    Dim scale = Math.Min(110.0F / logo.Width, 40.0F / logo.Height)
+                    Dim scale = Math.Min(100.0F / logo.Width, 34.0F / logo.Height)
                     Dim w = logo.Width * scale
                     Dim h = logo.Height * scale
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic
                     g.DrawImage(logo, New RectangleF((PageWidthPt - w) / 2, y, w, h))
-                    y += h + 6
+                    y += h + 4
                 End Using
             End If
             y = Line(g, r.BusinessName, Theme.Print.Studio, Theme.Ink, left, inner, y, StringAlignment.Center)
             If r.Address.Length > 0 Then y = Line(g, r.Address, Theme.Print.Small, Theme.Slate, left, inner, y, StringAlignment.Center)
             If r.Contact.Length > 0 Then y = Line(g, r.Contact, Theme.Print.Small, Theme.Slate, left, inner, y, StringAlignment.Center)
-            y += 9
+            y += 6
             Tracked(g, "ACKNOWLEDGMENT RECEIPT", Theme.Print.DocTitle, Theme.Ink, PageWidthPt / 2, y, 1.6F)
-            y += Theme.Print.DocTitle.GetHeight(g) + 6
+            y += Theme.Print.DocTitle.GetHeight(g) + 4
             Rule(g, left, right, y, Theme.Ink, 0.8F)
-            y += 8
+            y += 6
 
             ' Details: two columns of label + value.
             Dim colW = inner / 2 - 6
@@ -134,7 +146,7 @@ Namespace Printing
                 Pair(g, leftRows(i).Item1, leftRows(i).Item2, left, colW, y + i * rowH)
                 Pair(g, rightRows(i).Item1, rightRows(i).Item2, left + inner / 2 + 6, colW, y + i * rowH)
             Next
-            y += rowH * 3 + 8
+            y += rowH * 3 + 6
 
             ' Items table.
             Dim qtyRight = right - 118
@@ -157,7 +169,7 @@ Namespace Printing
             Next
             y += 2
             Rule(g, left, right, y, Theme.Silver, 0.5F)
-            y += 6
+            y += 5
 
             ' Totals on the right half.
             Dim tx = left + inner * 0.38F
@@ -170,6 +182,9 @@ Namespace Printing
                     Text(g, "Reason: " & r.DiscountReason, Theme.Print.Small, Theme.Slate, New RectangleF(tx, y - 1, tw, 9))
                     y += 9
                 End If
+            End If
+            If r.TaxAmount > 0D OrElse r.TaxRate > 0D Then
+                y = Amount(g, $"Add: tax ({Billing.FormatRate(r.TaxRate)})", "+" & Money.Format(r.TaxAmount), tx, tw, y, Theme.Print.Body)
             End If
             y = Amount(g, "Total", Money.Format(r.Total), tx, tw, y, Theme.Print.BodyBold)
             If r.Downpayment > 0D Then
@@ -190,10 +205,10 @@ Namespace Printing
                 y = Amount(g, "Change", Money.Format(r.ChangeAmount), tx, tw, y, Theme.Print.Body)
             End If
 
-            ' Voided: a large stamp across the page plus who/why.
+            ' Voided (receipts voided before voiding moved to Billing): a large stamp across the page plus who/why.
             If r.IsVoided Then
                 Dim state = g.Save()
-                g.TranslateTransform(PageWidthPt / 2, PageHeightPt / 2)
+                g.TranslateTransform(PageWidthPt / 2, pageHeight / 2)
                 g.RotateTransform(-28)
                 Using b As New SolidBrush(Color.FromArgb(70, Theme.Ink))
                     Using sf As New StringFormat() With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
@@ -202,17 +217,19 @@ Namespace Printing
                 End Using
                 g.Restore(state)
                 Dim voidedOn = If(r.VoidedAt.HasValue, r.VoidedAt.Value.ToString("MMM d, yyyy h:mm tt", PH), "")
-                Text(g, $"VOIDED {voidedOn}. Reason: {r.VoidReason}", Theme.Print.SmallBold, Theme.Ink, New RectangleF(left, y + 4, inner, 20))
+                Text(g, $"VOIDED {voidedOn}. Reason: {r.VoidReason}", Theme.Print.SmallBold, Theme.Ink, New RectangleF(left, y + 4, inner, 12))
+                y += 16
             End If
 
-            ' Footer.
-            Dim fy = PageHeightPt - 30 - 52
+            ' Footer, right under the totals (no gap down to a fixed page bottom).
+            Dim fy = y + 10
             Rule(g, left, left + 130, fy + 14, Theme.Ink, 0.5F)
             Text(g, "Received by: " & r.CashierName, Theme.Print.Small, Theme.Slate, New RectangleF(left, fy + 16, 160, 9))
-            fy += 32
-            Line(g, $"Thank you for choosing {r.BusinessName}!", Theme.Print.Small, Theme.Slate, left, inner, fy, StringAlignment.Center)
-            Line(g, "This document is not valid as a BIR invoice.", Theme.Print.SmallBold, Theme.Ink, left, inner, fy + 10, StringAlignment.Center)
-        End Sub
+            fy += 30
+            fy = Line(g, $"Thank you for choosing {r.BusinessName}!", Theme.Print.Small, Theme.Slate, left, inner, fy, StringAlignment.Center)
+            fy = Line(g, "This document is not valid as a BIR invoice.", Theme.Print.SmallBold, Theme.Ink, left, inner, fy + 1, StringAlignment.Center)
+            Return fy
+        End Function
 
         ' ---------------------------------------------------------------- receipt-specific helpers (shared ones: PrintKit)
         ''' <summary>One line of text across the content width; returns the y below it.</summary>

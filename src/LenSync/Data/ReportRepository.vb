@@ -24,20 +24,28 @@ Namespace Data
 
         Private Const InPeriod As String = "t.created_at >= @from AND t.created_at < @to"
 
-        ''' <summary>One row: receipts, gross, discounts, net, voided count for the period.</summary>
+        ''' <summary>One row: receipts, gross, discounts, tax, net for the period.</summary>
         Public Shared Function Totals(fromDay As Date, toDay As Date) As DataRow
             Return Db.Query(
                 "SELECT SUM(t.status = 'Completed') AS receipts, " &
                 "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.subtotal END), 0) AS gross, " &
                 "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.discount_amount END), 0) AS discounts, " &
-                "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.total END), 0) AS net, " &
-                "SUM(t.status = 'Voided') AS voided FROM transactions t WHERE " & InPeriod, Range(fromDay, toDay)).Rows(0)
+                "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.tax_amount END), 0) AS tax, " &
+                "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.total END), 0) AS net " &
+                "FROM transactions t WHERE " & InPeriod, Range(fromDay, toDay)).Rows(0)
+        End Function
+
+        ''' <summary>Unpaid bills voided in Billing during the period (by the day they were voided).</summary>
+        Public Shared Function VoidedBills(fromDay As Date, toDay As Date) As Integer
+            Return Db.Scalar(Of Integer)(
+                "SELECT COUNT(*) FROM bookings WHERE is_active = 1 AND status = 'Voided' AND closed_at >= @from AND closed_at < @to",
+                Range(fromDay, toDay))
         End Function
 
         Public Shared Function DailySales(fromDay As Date, toDay As Date) As DataTable
             Return Db.Query(
                 "SELECT DATE(t.created_at) AS d, COUNT(*) AS receipts, SUM(t.subtotal) AS gross, SUM(t.discount_amount) AS discounts, " &
-                "SUM(t.total) AS net, SUM(t.downpayment) AS downpayments, SUM(t.balance_due) AS balances " &
+                "SUM(t.tax_amount) AS tax, SUM(t.total) AS net, SUM(t.downpayment) AS downpayments, SUM(t.balance_due) AS balances " &
                 "FROM transactions t WHERE t.status = 'Completed' AND " & InPeriod & " GROUP BY DATE(t.created_at) ORDER BY d", Range(fromDay, toDay))
         End Function
 
@@ -69,7 +77,7 @@ Namespace Data
                 "SELECT u.full_name AS cashier, u.username, SUM(t.status = 'Completed') AS receipts, " &
                 "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.total END), 0) AS net, " &
                 "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.discount_amount END), 0) AS discounts, " &
-                "SUM(t.status = 'Voided') AS voided " &
+                "IFNULL(SUM(CASE WHEN t.status = 'Completed' THEN t.tax_amount END), 0) AS tax " &
                 "FROM transactions t JOIN users u ON u.id = t.cashier_id WHERE " & InPeriod &
                 " GROUP BY u.id, u.full_name, u.username ORDER BY net DESC, u.full_name", Range(fromDay, toDay))
         End Function
@@ -106,11 +114,6 @@ Namespace Data
 
         Public Shared Function ListLogs() As List(Of ReportLog)
             Return Db.Query(LogSelect & " ORDER BY r.generated_at DESC, r.id DESC LIMIT 1000").Rows.Cast(Of DataRow)().Select(AddressOf MapLog).ToList()
-        End Function
-
-        Public Shared Function FindLog(reportNo As String) As ReportLog
-            Dim t = Db.Query(LogSelect & " WHERE r.report_no = @no", Db.P("@no", reportNo))
-            Return If(t.Rows.Count = 0, Nothing, MapLog(t.Rows(0)))
         End Function
 
         Private Shared Function MapLog(r As DataRow) As ReportLog
